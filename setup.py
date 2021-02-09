@@ -5,5 +5,6 @@ setup(
         version='0.0.1',
         description='Tools for personal project in robotics',
         py_modules=["realAPI", "robotics", "simAPI", "sli"],
-        package_dir={'':'src'}
+        package_dir={'':'src'},
+        install_requires=['matplotlib']
     )
