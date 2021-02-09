@@ -1,6 +1,7 @@
 #!/bin/bash
 source /home/ola/library/anaconda3/etc/profile.d/conda.sh
-cd ..
+conda activate py38
+cd ~/projects/tpktools
 python setup.py bdist_wheel
 cd shell-commands
 conda deactivate 
