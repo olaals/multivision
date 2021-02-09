@@ -24,6 +24,9 @@ SOFTWARE.
 
 import numpy as np
 
+def testtest():
+    print("test successful")
+
 def rotx(rad):
     R = np.array([[1, 0, 0], [0, np.cos(rad), -np.sin(rad)], [0, np.sin(rad), np.cos(rad)]])
     #R  = np.round(R, 10)
