@@ -4,6 +4,7 @@ import cv2
 
 
 
+#create patterns
 
 def create_gray_code_pattern(pattern_number, image_width, image_height, channels=3):
     divisions = 2**(pattern_number)
@@ -38,6 +39,33 @@ def create_rainbow_pattern_img(patterns, image_width, image_height):
     return img
 
 
+# sli preprocessing
+def get_average_img(img_list, shape):
+    avg_img = np.zeros(shape)
+    N = 0
+    for img in img_list:
+        N += 1
+        avg_img += img
+
+    avg_img /= N
+    avg_img = np.around(avg_img)
+    return avg_img
+
+def make_binary_images(img_list, avg_img, offset_light_dark):
+    bin_img_list = []
+    for img in img_list:
+        bin_img = (img > avg_img+offset_light_dark)*1.0
+        bin_img_list.append(bin_img)
+    return bin_img_list
+
+def binary_images_to_projector_x_val_img(bin_img_list, shape):
+    x_value_image = np.zeros(shape)
+    bin_img_list.reverse()
+    x_factor = 1
+    for bin_img in bin_img_list:
+        x_value_image += bin_img * x_factor
+        x_factor *= 2
+    return x_value_image
 
 
 if __name__ == '__main__':

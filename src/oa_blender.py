@@ -1,3 +1,18 @@
+import bpy
+import os
+import numpy as np
+import oa_sli as sli
+
+def newFunc2():
+    print("dobbel hei")
+
+def getChildren(myObject):
+    children = []
+    for ob in bpy.data.objects:
+        if ob.parent == myObject:
+            children.append(ob)
+    return children
+
 def get_argument(arg):
     args = sys.argv
     for i in range(len(args)):
@@ -23,11 +38,64 @@ def get_image_list_from_folder(directory):
         pattern_img_list.append(image)
     return pattern_img_list
 
-def turn_off_projector(proj_spot_name):
-    spot = bpy.data.lights[proj_spot_name]
-    spot.energy = 0
+def numpy_img_to_blender_img(numpy_img):
+    size = np.shape(numpy_img)[1], np.shape(numpy_img)[0]
+    image = bpy.data.images.new("blImg", width=size[0], height=size[1], alpha=False)
+    pixels = [None] * size[0] * size[1]
+    for x in range(size[0]):
+        for y in range(size[1]):
+            a = 1.0
+            r = numpy_img[y,x,0]
+            g = numpy_img[y,x,1]
+            b = numpy_img[y,x,2]
 
-def turn_on_projector(proj_spot_name, power):
-    spot = bpy.data.lights[proj_spot_name]
-    spot.energy = power
+            pixels[(y * size[0]) + x] = [r, g, b, a]
+
+    pixels = [chan for px in pixels for chan in px]
+    image.pixels = pixels
+    return image
+
+
+class Projector:
+    def __init__(self, position, rotation, name):
+        bpy.ops.projector.create()
+        self.proj = bpy.data.objects.get("Projector")
+        self.proj.name = "Projector_"+name
+        children = getChildren(self.proj)
+        self.spotObj = children[0] 
+        self.spotObj.name = "Projector_"+name + ".Spot"
+        self.spot = bpy.data.lights.get("Spot")
+        self.spot.name = "Spot_"+name
+        self.proj.location = position
+        self.proj.rotation_euler = rotation
+        self.proj.proj_settings.throw_ratio = 1
+        self.turn_off_projector()
+
+    def __del__(self):
+        print("deleting ptoj")
+
+    def turn_off_projector(self):
+        self.spot.energy = 0
+
+    def turn_on_projector(self, power):
+        self.spot.energy = power
+
+    def apply_gray_code_pattern(self, pattern_number, width, height):
+        gray_code = sli.create_gray_code_pattern(pattern_number, width, height)
+        bl_img = numpy_img_to_blender_img(gray_code)
+        self.proj.proj_settings.projected_texture = 'custom_texture'
+        self.spot.node_tree.nodes.get("Image Texture").image = bl_img
+        self.proj.proj_settings.use_custom_texture_res = True
+        self.proj.proj_settings.use_custom_texture_res = False
+        self.proj.proj_settings.use_custom_texture_res = True
+
+
+
+
+   
+
+        
+
+
+
 
