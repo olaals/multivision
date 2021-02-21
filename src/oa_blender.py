@@ -55,6 +55,39 @@ def numpy_img_to_blender_img(numpy_img):
     image.pixels = pixels
     return image
 
+def get_camera_matrix():
+    scene = bpy.context.scene
+    scale = scene.render.resolution_percentage / 100
+    width = scene.render.resolution_x * scale # px
+    height = scene.render.resolution_y * scale # px
+    camdata = scene.camera.data
+
+    focal = camdata.lens # mm
+    sensor_width = camdata.sensor_width # mm
+    sensor_height = camdata.sensor_height # mm
+    pixel_aspect_ratio = scene.render.pixel_aspect_x / scene.render.pixel_aspect_y
+    if (camdata.sensor_fit == 'VERTICAL'):
+        # the sensor height is fixed (sensor fit is horizontal),
+        # the sensor width is effectively changed with the pixel aspect ratio
+        s_u = width / sensor_width / pixel_aspect_ratio
+        s_v = height / sensor_height
+    else: # 'HORIZONTAL' and 'AUTO'
+        # the sensor width is fixed (sensor fit is horizontal),
+        # the sensor height is effectively changed with the pixel aspect ratio
+        s_u = width / sensor_width
+        s_v = height * pixel_aspect_ratio / sensor_height
+    # parameters of intrinsic calibration matrix K
+    alpha_u = focal * s_u
+    alpha_v = focal * s_v
+    u_0 = width / 2
+    v_0 = height / 2
+    skew = 0 # only use rectangular pixels
+    K = np.array([
+        [alpha_u,    skew, u_0],
+        [      0, alpha_v, v_0],
+        [      0,       0,   1]
+    ])
+    return K
 
 class Projector:
     def __init__(self, position, rotation, name):
