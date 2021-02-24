@@ -1,7 +1,28 @@
 import bpy
 import os
 import numpy as np
+import builtins as __builtin__
+
 import oa_sli as sli
+
+def console_print(*args, **kwargs):
+    for a in bpy.context.screen.areas:
+        if a.type == 'CONSOLE':
+            c = {}
+            c['area'] = a
+            c['space_data'] = a.spaces.active
+            c['region'] = a.regions[-1]
+            c['window'] = bpy.context.window
+            c['screen'] = bpy.context.screen
+            s = " ".join([str(arg) for arg in args])
+            for line in s.split("\n"):
+                bpy.ops.console.scrollback_append(c, text=line)
+
+def print(*args, **kwargs):
+    """Console print() function."""
+
+    console_print(*args, **kwargs) # to py consoles
+    __builtin__.print(*args, **kwargs) # to system console
 
 def newFunc2():
     print("dobbel hei")
