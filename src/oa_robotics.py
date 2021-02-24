@@ -1,3 +1,5 @@
+# Some of these functions are taken from modern robotics with MIT license (see below). Additional functions are added, but assume every function is from modern robotics.
+
 """
 MIT License
 
