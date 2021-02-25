@@ -1,6 +1,20 @@
 import bpy
 
 def add_cuboid(name, size, offset=(0,0,0), location=(0,0,0)):
+    """
+    Add a cuboid ("3D rectangle cube") with size = (x,y,z)
+    Parameters:
+    name: name of the object 
+    size: (x,y,z) size of the object
+    offset: (optional) offset the mesh from the position of the object
+    location: set (x,y,z) location of the object
+
+    Returns:
+    Object with cuboid mesh linked
+
+    Example:
+    cuboid_obj = add_cuboid("MyCube", (1.0, 2.0, 0.5))
+    """
     x = size[0]
     y = size[1]
     z = size[2]

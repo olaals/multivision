@@ -170,7 +170,10 @@ def MatrixLog3(R):
         return theta / 2.0 / np.sin(theta) * (R - np.array(R).T)
 
 def so3ToVec(so3mat):
-    """Converts an so(3) representation to a 3-vector
+    """
+    LICENSE: Modern robotics
+
+    Converts an so(3) representation to a 3-vector
     :param so3mat: A 3x3 skew-symmetric matrix
     :return: The 3-vector corresponding to so3mat
     Example Input:
@@ -181,6 +184,24 @@ def so3ToVec(so3mat):
         np.array([1, 2, 3])
     """
     return np.array([so3mat[2][1], so3mat[0][2], so3mat[1][0]])
+
+def vec_to_so3(vec):
+    """
+    LICENSE: Modern Robotics
+    
+    Converts a 3-vector to an so(3) representation
+    :param omg: A 3-vector
+    :return: The skew symmetric representation of omg
+    Example Input:
+        vec = np.array([1, 2, 3])
+    Output:
+        np.array([[ 0, -3,  2],
+                  [ 3,  0, -1],
+                  [-2,  1,  0]])
+    """
+    return np.array([[0,      -vec[2],  vec[1]],
+                     [vec[2],       0, -vec[0]],
+                     [-vec[1], vec[0],       0]])
 
 def matrixLog3AngAx(R):
     R_log = MatrixLog3(R)

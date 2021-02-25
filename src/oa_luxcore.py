@@ -2,7 +2,9 @@ import bpy
 import oa_ls as oals
 import oa_blender as oabl
 import oa_bl_meshes as oams
+import oa_robotics as oarb
 import math
+import numpy as np
 
 
 def luxcore_setup():
@@ -40,6 +42,9 @@ class LuxcoreProjector:
     def set_rotation_euler(self, rotation):
         self.light_object.rotation_euler = rotation
 
+    def get_rotation_euler(self):
+        return self.light_object.rotation_euler
+
     def set_parent(self, parent_obj):
         self.light_object.parent = parent_obj
 
@@ -57,17 +62,75 @@ class LuxcoreLaser(LuxcoreProjector):
         self.set_projector_image(laser_img)
 
 class LuxcoreLaserScanner:
-    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), distance_cam_laser=0.2, angle=math.pi/20, lumens=100):
+    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), distance_cam_laser=0.2, angle=math.pi/20, lumens=100, cam_left=True):
         self.laser = LuxcoreLaser(name + "_laser", lumens=lumens)
         cam = bpy.data.cameras.new(name+"_camera")
         self.camera = bpy.data.objects.new(name+"_camera", cam)
         bpy.context.collection.objects.link(self.camera)
 
-        self.camera.location = (distance_cam_laser/2,0,0)
-        self.laser.set_location((-distance_cam_laser/2,0,0))
-        self.camera.rotation_euler = (0,angle/2,0)
-        self.laser.set_rotation_euler((0, -angle/2,0))
+        if cam_left:
+            self.camera.location = (-distance_cam_laser/2,0,0)
+            self.laser.set_location((distance_cam_laser/2,0,0))
+            self.camera.rotation_euler = (0,-angle/2,0)
+            self.laser.set_rotation_euler((0, angle/2,0))
+        else:
+            self.camera.location = (distance_cam_laser/2,0,0)
+            self.laser.set_location((-distance_cam_laser/2,0,0))
+            self.camera.rotation_euler = (0,angle/2,0)
+            self.laser.set_rotation_euler((0, -angle/2,0))
 
         self.cube = oams.add_cuboid(name, (distance_cam_laser, distance_cam_laser/2, distance_cam_laser/2), (0,0,distance_cam_laser/4))
         self.laser.set_parent(self.cube)
         self.camera.parent = self.cube
+
+        self.cube.location = location
+        self.cube.rotation_euler = orientation
+    
+    def get_essential_matrix(self):
+        laser_quat = self.laser.get_rotation_euler().to_quaternion()
+        laser_loc = self.laser.get_location()
+        cam_quat = self.camera.rotation_euler.to_quaternion()
+        cam_loc = self.camera.location
+        R_W_L = laser_quat.to_matrix()
+        R_L_W = R_W_L.transposed()
+        R_L_C = laser_quat.rotation_difference(cam_quat).to_matrix()
+        t_L_C_W = cam_loc - laser_loc
+        t_L_C_L = R_L_W @t_L_C_W
+        R_L_C = np.array(R_L_C)
+        essential_matrix = R_L_C@oarb.vec_to_so3(t_L_C_L)
+        return essential_matrix
+    
+    def get_rotation_cam_to_lightsource(self, mode="matrix"):
+        cam_quat = self.camera.rotation_euler.to_quaternion()
+        laser_quat = self.laser.get_rotation_euler().to_quaternion()
+        quat_C_L = cam_quat.rotation_difference(laser_quat)
+        if mode=="matrix":
+            return quat_C_L.to_matrix()
+        
+        elif mode=="euler":
+            return quat_C_L.to_euler('XYZ')
+        
+        elif mode=="quaternion":
+            return quat_C_L
+        
+        else:
+            raise Exception("get_rotation_cam_to_light_source: No mode for " + mode)
+            return
+    
+    def get_translation_cam_to_lightsource(self):
+        laser_loc_world = self.laser.get_location()
+        cam_loc_world = self.camera.location
+        R_C_W = self.camera.rotation_euler.to_matrix().transposed()
+        t_C_L_W = laser_loc_world - cam_loc_world
+        t_C_L_C = R_C_W@t_C_L_W
+        return t_C_L_C
+
+
+
+    
+    
+
+
+    
+
+
