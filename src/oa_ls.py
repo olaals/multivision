@@ -3,8 +3,9 @@ import numpy as np
 from itertools import chain, repeat, cycle, islice
 
 def create_laser_scan_line(color, half_line_width, image_width, image_height):
+    assert(len(color)==3)
     img = np.zeros((image_height, image_width, 3))
-    img[:, int(image_width/2-half_line_width):int(image_width/2+half_line_width), 2] = 255
+    img[:, int(image_width/2-half_line_width):int(image_width/2+half_line_width), :] = color
     return img
 
 

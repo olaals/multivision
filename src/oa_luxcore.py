@@ -66,7 +66,49 @@ def assign_material(object, material):
         object.data.materials.append(mat)
 
 
+def assign_mix_material(object, material1, material2, weight=0.5):
 
+    luxcore_mat_dict = {
+        "Disney": "LuxCoreNodeMatDisney",
+        "Mix": "LuxCoreNodeMatMix",
+        "Matte": "LuxCoreNodeMatMatte",
+        "Glossy": "LuxCoreNodeMatGlossy2",
+        "Glass": "LuxCoreNodeMatGlass",
+        "Null (Transparent)": "LuxCoreNodeMatNull",
+        "Metal": "LuxCoreNodeMatMetal",
+        "Mirror": "LuxCoreNodeMatMirror",
+        "Glossy Translucent": "LuxCoreNodeMatGlossyTranslucent",
+        "Matte Translucent": "LuxCoreNodeMatMatteTranslucent",
+    }
+
+    mat = bpy.data.materials.new(name=material1+"_"+material2)
+    tree_name = "Nodes_" + mat.name
+    node_tree = bpy.data.node_groups.new(name=tree_name, type="luxcore_material_nodes")
+    mat.luxcore.node_tree = node_tree
+    # User counting does not work reliably with Python PointerProperty.
+    # Sometimes, the material this tree is linked to is not counted as user.
+    #node_tree.use_fake_user = True
+
+    nodes = node_tree.nodes
+    output_node = nodes.new("LuxCoreNodeMatOutput")
+    output_node.location = 300, 200
+    output_node.select = False
+    mat_node1 = nodes.new(luxcore_mat_dict[material1])
+    mat_node2 = nodes.new(luxcore_mat_dict[material2])
+    mix_node = nodes.new(luxcore_mat_dict["Mix"])
+    mat_node1.location = 20, 100
+    mat_node2.location = 20, 300
+    mix_node.location = 200, 200
+    node_tree.links.new(mat_node1.outputs[0], mix_node.inputs[0])
+    node_tree.links.new(mat_node2.outputs[0], mix_node.inputs[1])
+    node_tree.links.new(mix_node.outputs[0], output_node.inputs[0])
+
+    ###############################################################
+
+    if object.material_slots:
+        object.material_slots[obj.active_material_index].material = mat
+    else:
+        object.data.materials.append(mat)
 
 
 
@@ -81,6 +123,7 @@ class LuxcoreProjector:
         self.light_object.location = location
         self.light_object.rotation_euler = orientation
         self.light_object.data.luxcore.normalizebycolor=normalize_color_luminance
+        self.light_object.data.spot_size = fov_rad
 
     def set_projector_image(self, image, numpy_image=True):
         if numpy_image:
@@ -109,9 +152,9 @@ class LuxcoreProjector:
     def set_parent(self, parent_obj):
         self.light_object.parent = parent_obj
     
-    def save_projection_image_to_png(self):
+    def save_projection_image_to_png(self, filename="projection_image.png"):
         image = self.projection_image
-        image.filepath_raw = self.name + "_projection_image.png"
+        image.filepath_raw = os.path.join(os.getcwd(), filename)
         image.file_format = 'PNG'
         image.save()
 
@@ -123,10 +166,12 @@ class LuxcoreLaser(LuxcoreProjector):
         laser_img = oals.create_laser_scan_line(laser_color, half_line_width_px, image_res_x, image_res_y)
         self.set_projector_image(laser_img)
 
-
-        
     def set_laser_image(self, laser_color, half_line_width_px, image_res_x, image_res_y):
         laser_img = oals.create_laser_scan_line(laser_color, half_line_width_px, image_res_x, image_res_y)
+        self.set_projector_image(laser_img)
+    
+    def set_laser_image_periodical(self, colors_list, half_line_width, step, image_res_x, image_res_y):
+        laser_img = oals.create_laser_scan_line_periodical_color(colors_list, half_line_width, step, image_res_x, image_res_y)
         self.set_projector_image(laser_img)
 
 
@@ -246,9 +291,9 @@ class LuxcoreLaserScanner(LuxcoreTemplateScanner):
         super().__init__(name, LuxcoreLaser(name + "_laser", lumens=lumens), location=location, orientation=orientation, distance_cam_lightsource=distance_cam_laser, angle=angle, camera_resolution=camera_resolution, cam_left=cam_left)
 
 class LuxcoreStructuredLightScanner(LuxcoreTemplateScanner):
-    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), distance_cam_laser=0.2, angle=math.pi/20, lumens=3500, camera_resolution=(1920,1080),cam_left=True):
+    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), distance_cam_laser=0.2, angle=math.pi/20, lumens=3500, camera_resolution=(1920,1080), laser_resolution=(1920,1080), cam_left=True):
         super().__init__(name, LuxcoreProjector(name + "_proj", lumens=lumens), location=location, orientation=orientation, distance_cam_lightsource=distance_cam_laser, angle=angle, camera_resolution=camera_resolution, cam_left=cam_left)
-        blue_img = oasli.create_blue_img(500, 500)
+        blue_img = oasli.create_blue_img(laser_resolution[0], laser_resolution[1])
         self.lightsource.set_projector_image(blue_img)
 
 

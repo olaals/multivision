@@ -1,4 +1,5 @@
 import bpy
+import random
 
 def add_cuboid(name, size=(1,1,1), offset=(0,0,0), location=(0,0,0)):
     """
@@ -35,3 +36,20 @@ def add_cuboid(name, size=(1,1,1), offset=(0,0,0), location=(0,0,0)):
     mesh.from_pydata(verts,edges,faces)
     bpy.context.collection.objects.link(obj)
     return obj
+
+def assign_random_orientation(object):
+    object.rotation_euler = (random.uniform(0, 6.24), random.uniform(0,6.24), random.uniform(0,6.24))
+
+def assign_random_location_with_limits(object, limits_min, limits_max):
+    x = random.uniform(limits_min[0], limits_max[0])
+    y = random.uniform(limits_min[1], limits_max[1])
+    z = random.uniform(limits_min[2], limits_max[2])
+    object.location = (x,y,z)
+
+def assign_random_scaling_with_limits(object, limits_min, limits_max):
+    x = random.uniform(limits_min[0], limits_max[0])
+    y = random.uniform(limits_min[1], limits_max[1])
+    z = random.uniform(limits_min[2], limits_max[2])
+    object.scale[0] *= x
+    object.scale[1] *= y
+    object.scale[2] *= z
