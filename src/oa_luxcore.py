@@ -1,18 +1,33 @@
 import bpy
 import oa_ls as oals
+import oa_sli as oasli
 import oa_blender as oabl
 import oa_bl_meshes as oams
 import oa_robotics as oarb
 import math
 import numpy as np
+import os
 
 
-def luxcore_setup():
+def luxcore_setup(render_time = 60):
     bpy.context.scene.render.engine = 'LUXCORE'
+    bpy.context.scene.luxcore.halt.use_time = True
+    bpy.context.scene.luxcore.halt.time = render_time
+    bpy.context.scene.luxcore.config.path.depth_total = 2
+    bpy.context.scene.luxcore.config.path.depth_glossy = 2
+    bpy.context.scene.luxcore.config.path.depth_specular = 2
+    bpy.context.scene.luxcore.config.path.depth_diffuse = 2
+    bpy.context.scene.luxcore.config.device = 'OCL'
+    bpy.context.scene.luxcore.config.path.hybridbackforward_enable = True
+    bpy.context.scene.luxcore.denoiser.enabled = False
+
+
+
 
 
 class LuxcoreProjector:
-    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), lumens=0, normalize_color_luminance=False, fov_rad=math.pi/6):
+    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), lumens=0, normalize_color_luminance=True, fov_rad=math.pi/6):
+        self.name = name
         self.spot = bpy.data.lights.new(name=name + "_spot", type='SPOT')
         self.light_object = bpy.data.objects.new(name=name +"_lightobj", object_data=self.spot)
         self.light_object.data.luxcore.light_unit = 'lumen'
@@ -26,6 +41,7 @@ class LuxcoreProjector:
         if numpy_image:
             image = oabl.numpy_img_to_blender_img(image) # convert to blender image
         self.spot.luxcore.image = image
+        self.projection_image = image
 
     def set_lumens(self, lumens):
         self.light_object.data.luxcore.lumen = lumens
@@ -47,10 +63,17 @@ class LuxcoreProjector:
 
     def set_parent(self, parent_obj):
         self.light_object.parent = parent_obj
+    
+    def save_projection_image_to_png(self):
+        image = self.projection_image
+        image.filepath_raw = self.name + "_projection_image.png"
+        image.file_format = 'PNG'
+        image.save()
+
 
 
 class LuxcoreLaser(LuxcoreProjector):
-    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), lumens=0, fov_rad=math.pi/6, image_res_x=1000, image_res_y=1000, half_line_width_px=2, laser_color=(255,0,0)):
+    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), lumens=0, fov_rad=math.pi/6, image_res_x=1000, image_res_y=1000, half_line_width_px=1, laser_color=(255,0,0)):
         super().__init__(name, location=location, orientation=orientation, lumens=lumens, normalize_color_luminance=True, fov_rad=fov_rad)
         laser_img = oals.create_laser_scan_line(laser_color, half_line_width_px, image_res_x, image_res_y)
         self.set_projector_image(laser_img)
@@ -63,8 +86,9 @@ class LuxcoreLaser(LuxcoreProjector):
 
 
 class LuxcoreTemplateScanner:
-    def __init__(self, name, lightsource, location=(0,0,0), orientation=(0,0,0), distance_cam_lightsource=0.2, angle=math.pi/20, cam_left=True):
+    def __init__(self, name, lightsource, location=(0,0,0), orientation=(0,0,0), distance_cam_lightsource=0.2, angle=math.pi/20, camera_resolution=(1920,1080), cam_left=True):
         self.lightsource = lightsource
+        self.camera_resolution=camera_resolution
         cam = bpy.data.cameras.new(name+"_camera")
         self.camera = bpy.data.objects.new(name+"_camera", cam)
         bpy.context.collection.objects.link(self.camera)
@@ -83,9 +107,55 @@ class LuxcoreTemplateScanner:
         self.cube = oams.add_cuboid(name, (distance_cam_lightsource, distance_cam_lightsource/2, distance_cam_lightsource/2), (0,0,distance_cam_lightsource/4))
         self.lightsource.set_parent(self.cube)
         self.camera.parent = self.cube
-
         self.cube.location = location
         self.cube.rotation_euler = orientation
+    
+    def render_camera_image(self, filename):
+        scene = bpy.context.scene
+        scene.camera = self.camera
+        scene.render.resolution_x = self.camera_resolution[0]
+        scene.render.resolution_y = self.camera_resolution[1]
+        scene.render.filepath = os.path.join(os.getcwd(), filename)
+        bpy.ops.render.render(write_still=True)
+
+
+    
+    def get_camera_matrix(self):
+        #scene = bpy.context.scene
+        #scale = scene.render.resolution_percentage / 100
+        width = self.camera_resolution[0] #* scale # px
+        height = self.camera_resolution[1]# * scale # px
+        camdata = self.camera.data
+        focal = camdata.lens # mm
+        sensor_width = camdata.sensor_width # mm
+        sensor_height = camdata.sensor_height # mm
+        #pixel_aspect_ratio = scene.render.pixel_aspect_x / scene.render.pixel_aspect_y
+        pixel_aspect_ratio = 1.0
+        #print("pixel aspect ratio")
+        #print(pixel_aspect_ratio)
+        if (camdata.sensor_fit == 'VERTICAL'):
+            # the sensor height is fixed (sensor fit is horizontal), 
+            # the sensor width is effectively changed with the pixel aspect ratio
+            s_u = width / sensor_width / pixel_aspect_ratio 
+            s_v = height / sensor_height
+        else: # 'HORIZONTAL' and 'AUTO'
+            # the sensor width is fixed (sensor fit is horizontal), 
+            # the sensor height is effectively changed with the pixel aspect ratio
+            s_u = width / sensor_width
+            s_v = height * pixel_aspect_ratio / sensor_height
+        # parameters of intrinsic calibration matrix K
+        alpha_u = focal * s_u
+        alpha_v = focal * s_v
+        u_0 = width / 2
+        v_0 = height / 2
+        skew = 0 # only use rectangular pixels
+        K = np.array([
+            [alpha_u,    skew, u_0],
+            [      0, alpha_v, v_0],
+            [      0,       0,   1]
+        ])
+        return K
+    
     
     def get_essential_matrix(self):
         lightsource_quat = self.lightsource.get_rotation_euler().to_quaternion()
@@ -127,12 +197,14 @@ class LuxcoreTemplateScanner:
         return t_C_L_C
 
 class LuxcoreLaserScanner(LuxcoreTemplateScanner):
-    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), distance_cam_laser=0.2, angle=math.pi/20, lumens=100, cam_left=True):
-        super().__init__(name, LuxcoreLaser(name + "_laser", lumens=lumens), location=location, orientation=orientation, distance_cam_lightsource=distance_cam_laser, angle=angle, cam_left=cam_left)
+    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), distance_cam_laser=0.2, angle=math.pi/20, lumens=100, camera_resolution=(1920,1080),cam_left=True):
+        super().__init__(name, LuxcoreLaser(name + "_laser", lumens=lumens), location=location, orientation=orientation, distance_cam_lightsource=distance_cam_laser, angle=angle, camera_resolution=camera_resolution, cam_left=cam_left)
 
 class LuxcoreStructuredLightScanner(LuxcoreTemplateScanner):
-    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), distance_cam_laser=0.2, angle=math.pi/20, lumens=100, cam_left=True):
-        super().__init__(name, LuxcoreProjector(name + "_proj", lumens=lumens), location=location, orientation=orientation, distance_cam_lightsource=distance_cam_laser, angle=angle, cam_left=cam_left)
+    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), distance_cam_laser=0.2, angle=math.pi/20, lumens=3500, camera_resolution=(1920,1080),cam_left=True):
+        super().__init__(name, LuxcoreProjector(name + "_proj", lumens=lumens), location=location, orientation=orientation, distance_cam_lightsource=distance_cam_laser, angle=angle, camera_resolution=camera_resolution, cam_left=cam_left)
+        blue_img = oasli.create_blue_img(500, 500)
+        self.lightsource.set_projector_image(blue_img)
 
 
 

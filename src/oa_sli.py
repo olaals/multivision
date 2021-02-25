@@ -38,6 +38,11 @@ def create_rainbow_pattern_img(patterns, image_width, image_height):
             img[:, i*step:(i+1)*step, 2] = 255
     return img
 
+def create_blue_img(image_width, image_height):
+    img = np.zeros((image_height, image_width, 3), np.uint8)
+    img[:,:] = (0,0,255)
+    return img
+    
 
 # sli preprocessing
 def get_average_img(img_list, shape):
