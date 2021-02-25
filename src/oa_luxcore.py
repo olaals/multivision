@@ -20,6 +20,51 @@ def luxcore_setup(render_time = 60):
     bpy.context.scene.luxcore.config.device = 'OCL'
     bpy.context.scene.luxcore.config.path.hybridbackforward_enable = True
     bpy.context.scene.luxcore.denoiser.enabled = False
+    bpy.context.scene.luxcore.viewport.denoise = False
+    bpy.context.scene.luxcore.viewport.add_light_tracing = False
+
+
+    
+    
+
+def assign_material(object, material):
+
+    luxcore_mat_dict = {
+        "Disney": "LuxCoreNodeMatDisney",
+        "Mix": "LuxCoreNodeMatMix",
+        "Matte": "LuxCoreNodeMatMatte",
+        "Glossy": "LuxCoreNodeMatGlossy2",
+        "Glass": "LuxCoreNodeMatGlass",
+        "Null (Transparent)": "LuxCoreNodeMatNull",
+        "Metal": "LuxCoreNodeMatMetal",
+        "Mirror": "LuxCoreNodeMatMirror",
+        "Glossy Translucent": "LuxCoreNodeMatGlossyTranslucent",
+        "Matte Translucent": "LuxCoreNodeMatMatteTranslucent",
+    }
+
+    mat = bpy.data.materials.new(name=material)
+    tree_name = "Nodes_" + mat.name
+    node_tree = bpy.data.node_groups.new(name=tree_name, type="luxcore_material_nodes")
+    mat.luxcore.node_tree = node_tree
+    # User counting does not work reliably with Python PointerProperty.
+    # Sometimes, the material this tree is linked to is not counted as user.
+    #node_tree.use_fake_user = True
+
+    nodes = node_tree.nodes
+    output_node = nodes.new("LuxCoreNodeMatOutput")
+    output_node.location = 300, 200
+    output_node.select = False
+    mat_node = nodes.new(luxcore_mat_dict[material])
+    mat_node.location = 50, 200
+    node_tree.links.new(mat_node.outputs[0], output_node.inputs[0])
+
+    ###############################################################
+
+    if object.material_slots:
+        object.material_slots[obj.active_material_index].material = mat
+    else:
+        object.data.materials.append(mat)
+
 
 
 

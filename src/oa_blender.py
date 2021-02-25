@@ -5,6 +5,11 @@ import builtins as __builtin__
 
 import oa_sli as sli
 
+def delete_all():
+    bpy.ops.object.select_all(action='SELECT')
+    bpy.ops.object.delete() 
+
+
 def console_print(*args, **kwargs):
     for a in bpy.context.screen.areas:
         if a.type == 'CONSOLE':

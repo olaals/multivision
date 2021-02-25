@@ -1,6 +1,6 @@
 import bpy
 
-def add_cuboid(name, size, offset=(0,0,0), location=(0,0,0)):
+def add_cuboid(name, size=(1,1,1), offset=(0,0,0), location=(0,0,0)):
     """
     Add a cuboid ("3D rectangle cube") with size = (x,y,z)
     Parameters:
