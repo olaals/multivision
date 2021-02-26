@@ -115,12 +115,24 @@ def assign_mix_material(object, material1, material2, weight=0.5):
 
 class Axis:
     def __init__(self, parent):
+        self.parent = parent
         self.axis = bpy.data.objects.new( "empty", None )
         bpy.context.scene.collection.objects.link(self.axis)
         self.axis.empty_display_size = 1
         self.axis.empty_display_type = 'ARROWS'  
         self.axis.rotation_euler = (math.pi, 0, 0)
         self.axis.parent = parent
+    
+    def get_rotation_parent(self):
+        R_CA = self.axis.rotation_euler.copy()
+        R_BC = self.parent.rotation_euler.copy()
+        R_BA = R_BC.to_matrix()@R_CA.to_matrix()
+
+        return R_BA.to_euler()
+        
+
+
+
 
 
 
@@ -170,8 +182,6 @@ class LuxcoreProjector(ObjectTemplate):
 
     def get_lumens(self):
         return self.light_object.luxcore.lumen
-
-
     
     def save_projection_image_to_png(self, filename="projection_image.png"):
         image = self.projection_image
@@ -198,6 +208,7 @@ class LuxcoreLaser(LuxcoreProjector):
 
 class Camera(ObjectTemplate):
     def __init__(self, name, location=(0,0,0), rotation=(0,0,0), resolution=(1920,1080)):
+        self.name = name
         self.resolution = resolution
         cam = bpy.data.cameras.new(name)
         self.camera = bpy.data.objects.new(name, cam)
@@ -206,14 +217,6 @@ class Camera(ObjectTemplate):
         self.camera.location = location
         self.camera.rotation_euler = rotation
         self.axis = Axis(self.camera)
-
-    def add_axis(self):
-        self.axis = bpy.data.objects.new( "empty", None )
-        self.axis.empty_display_size = 1
-        self.axis.empty_display_type = 'ARROWS'  
-        self.axis.rotation_euler = (math.pi, 0, 0)
-        self.axis.parent = self.camera
-        bpy.context.collection.objects.link(self.axis)
 
     def render_camera_image(self, filename, directory=None):
         scene = bpy.context.scene
@@ -285,156 +288,64 @@ class LuxcoreTemplateScanner:
         self.cube.location = location
         self.cube.rotation_euler = orientation
     
+
     def get_essential_matrix(self):
-        lightsource_quat = self.lightsource.get_rotation().to_quaternion()
-        lightsource_loc = self.lightsource.get_location()
-        cam_quat = self.camera.get_rotation().to_quaternion()
-        cam_loc = self.camera.location
-        R_W_L = lightsource_quat.to_matrix()
-        R_L_W = R_W_L.transposed()
-        R_L_C = lightsource_quat.rotation_difference(cam_quat).to_matrix()
-        t_L_C_W = cam_loc - lightsource_loc
-        t_L_C_L = R_L_W @t_L_C_W
-        R_L_C = np.array(R_L_C)
-        essential_matrix = R_L_C@oarb.vec_to_so3(t_L_C_L)
+        t_LC_L = self.get_translation_lightsource_to_cam()
+        R_LC = self.get_rotation_lightsource_to_cam()
+        essential_matrix = R_LC@oarb.vec_to_so3(t_LC_L)
         return essential_matrix
     
     def get_rotation_cam_to_lightsource(self, mode="matrix"):
-        cam_quat = self.camera.get_rotation().to_quaternion()
-        lightsource_quat = self.lightsource.get_rotation().to_quaternion()
-        quat_C_L = cam_quat.rotation_difference(lightsource_quat)
+        R_BC = self.camera.axis.get_rotation_parent().to_matrix()
+        R_BL = self.lightsource.axis.get_rotation_parent().to_matrix()
+        R_CB = R_BC.transposed()
+        R_CL = R_CB@R_BL
         if mode=="matrix":
-            return quat_C_L.to_matrix()
+            return R_CL
         
         elif mode=="euler":
-            return quat_C_L.to_euler('XYZ')
+            return R_CL.to_euler('XYZ')
         
         elif mode=="quaternion":
-            return quat_C_L
+            return R_CL.to_quaternion()
+        
+        else:
+            raise Exception("get_rotation_cam_to_light_source: No mode for " + mode)
+            return
+
+    def get_rotation_lightsource_to_cam(self, mode="matrix"):
+        R_BC = self.camera.axis.get_rotation_parent().to_matrix()
+        R_BL = self.lightsource.axis.get_rotation_parent().to_matrix()
+        R_LB = R_BL.transposed()
+        R_LC = R_LB@R_BC
+        if mode=="matrix":
+            return R_LC
+        
+        elif mode=="euler":
+            return R_LC.to_euler('XYZ')
+        
+        elif mode=="quaternion":
+            return R_LC.to_quaternion()
         
         else:
             raise Exception("get_rotation_cam_to_light_source: No mode for " + mode)
             return
     
     def get_translation_cam_to_lightsource(self):
-        lightsource_loc_world = self.lightsource.get_location()
-        cam_loc_world = self.camera.location
-        R_C_W = self.camera.get_rotation().to_matrix().transposed()
-        t_C_L_W = lightsource_loc_world - cam_loc_world
-        t_C_L_C = R_C_W@t_C_L_W
-        return t_C_L_C
-"""
-class LuxcoreTemplateScanner:
-    def __init__(self, name, lightsource, location=(0,0,0), orientation=(0,0,0), distance_cam_lightsource=0.2, angle=math.pi/20, camera_resolution=(1920,1080), cam_left=True):
-        self.lightsource = lightsource
-        self.camera_resolution=camera_resolution
-        cam = bpy.data.cameras.new(name+"_camera")
-        self.camera = bpy.data.objects.new(name+"_camera", cam)
-        bpy.context.collection.objects.link(self.camera)
+        t_BL_B = self.lightsource.get_location()
+        t_BC_B = self.camera.get_location()
+        R_CB = self.camera.axis.get_rotation_parent().to_matrix().transposed()
+        t_CL_B = t_BL_B - t_BC_B
+        t_CL_C = R_CB@t_CL_B
+        return t_CL_C
 
-        if cam_left:
-            self.camera.location = (-distance_cam_lightsource/2,0,0)
-            self.lightsource.set_location((distance_cam_lightsource/2,0,0))
-            self.camera.rotation_euler = (0,-angle/2,0)
-            self.lightsource.set_rotation_euler((0, angle/2,0))
-        else:
-            self.camera.location = (distance_cam_lightsource/2,0,0)
-            self.lightsource.set_location((-distance_cam_lightsource/2,0,0))
-            self.camera.rotation_euler = (0,angle/2,0)
-            self.lightsource.set_rotation_euler((0, -angle/2,0))
-
-        self.cube = oams.add_cuboid(name, (distance_cam_lightsource, distance_cam_lightsource/2, distance_cam_lightsource/2), (0,0,distance_cam_lightsource/4))
-        self.lightsource.set_parent(self.cube)
-        self.camera.parent = self.cube
-        self.cube.location = location
-        self.cube.rotation_euler = orientation
-    
-    def render_camera_image(self, filename):
-        scene = bpy.context.scene
-        scene.camera = self.camera
-        scene.render.resolution_x = self.camera_resolution[0]
-        scene.render.resolution_y = self.camera_resolution[1]
-        scene.render.filepath = os.path.join(os.getcwd(), filename)
-        bpy.ops.render.render(write_still=True)
-
-
-    
-    def get_camera_matrix(self):
-        #scene = bpy.context.scene
-        #scale = scene.render.resolution_percentage / 100
-        width = self.camera_resolution[0] #* scale # px
-        height = self.camera_resolution[1]# * scale # px
-        camdata = self.camera.data
-        focal = camdata.lens # mm
-        sensor_width = camdata.sensor_width # mm
-        sensor_height = camdata.sensor_height # mm
-        #pixel_aspect_ratio = scene.render.pixel_aspect_x / scene.render.pixel_aspect_y
-        pixel_aspect_ratio = 1.0
-        #print("pixel aspect ratio")
-        #print(pixel_aspect_ratio)
-        if (camdata.sensor_fit == 'VERTICAL'):
-            # the sensor height is fixed (sensor fit is horizontal), 
-            # the sensor width is effectively changed with the pixel aspect ratio
-            s_u = width / sensor_width / pixel_aspect_ratio 
-            s_v = height / sensor_height
-        else: # 'HORIZONTAL' and 'AUTO'
-            # the sensor width is fixed (sensor fit is horizontal), 
-            # the sensor height is effectively changed with the pixel aspect ratio
-            s_u = width / sensor_width
-            s_v = height * pixel_aspect_ratio / sensor_height
-        # parameters of intrinsic calibration matrix K
-        alpha_u = focal * s_u
-        alpha_v = focal * s_v
-        u_0 = width / 2
-        v_0 = height / 2
-        skew = 0 # only use rectangular pixels
-        K = np.array([
-            [alpha_u,    skew, u_0],
-            [      0, alpha_v, v_0],
-            [      0,       0,   1]
-        ])
-        return K
-    
-    
-    def get_essential_matrix(self):
-        lightsource_quat = self.lightsource.get_rotation_euler().to_quaternion()
-        lightsource_loc = self.lightsource.get_location()
-        cam_quat = self.camera.rotation_euler.to_quaternion()
-        cam_loc = self.camera.location
-        R_W_L = lightsource_quat.to_matrix()
-        R_L_W = R_W_L.transposed()
-        R_L_C = lightsource_quat.rotation_difference(cam_quat).to_matrix()
-        t_L_C_W = cam_loc - lightsource_loc
-        t_L_C_L = R_L_W @t_L_C_W
-        R_L_C = np.array(R_L_C)
-        essential_matrix = R_L_C@oarb.vec_to_so3(t_L_C_L)
-        return essential_matrix
-    
-    def get_rotation_cam_to_lightsource(self, mode="matrix"):
-        cam_quat = self.camera.rotation_euler.to_quaternion()
-        lightsource_quat = self.lightsource.get_rotation_euler().to_quaternion()
-        quat_C_L = cam_quat.rotation_difference(lightsource_quat)
-        if mode=="matrix":
-            return quat_C_L.to_matrix()
-        
-        elif mode=="euler":
-            return quat_C_L.to_euler('XYZ')
-        
-        elif mode=="quaternion":
-            return quat_C_L
-        
-        else:
-            raise Exception("get_rotation_cam_to_light_source: No mode for " + mode)
-            return
-    
-    def get_translation_cam_to_lightsource(self):
-        lightsource_loc_world = self.lightsource.get_location()
-        cam_loc_world = self.camera.location
-        R_C_W = self.camera.rotation_euler.to_matrix().transposed()
-        t_C_L_W = lightsource_loc_world - cam_loc_world
-        t_C_L_C = R_C_W@t_C_L_W
-        return t_C_L_C
-"""
+    def get_translation_lightsource_to_cam(self):
+        t_BL_B = self.lightsource.get_location()
+        t_CL_B = self.camera.get_location()
+        R_LB = self.lightsource.axis.get_rotation_parent().to_matrix().transposed()
+        t_LC_B = t_CL_B - t_BL_B
+        t_LC_L = R_LB@t_LC_B
+        return t_LC_L
 
 class LuxcoreLaserScanner(LuxcoreTemplateScanner):
     def __init__(self, name, location=(0,0,0), orientation=(0,0,0), distance_cam_laser=0.2, angle=math.pi/20, lumens=100, camera_resolution=(1920,1080),cam_left=True):
