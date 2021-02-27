@@ -11,8 +11,9 @@ import copy
 import mathutils
 
 
-def luxcore_setup(render_time=120):
+def luxcore_setup(render_time=60):
     bpy.context.scene.render.engine = 'LUXCORE'
+    bpy.context.scene.luxcore.halt.enable = True
     bpy.context.scene.luxcore.halt.use_time = True
     bpy.context.scene.luxcore.halt.time = render_time
     bpy.context.scene.luxcore.config.path.depth_total = 2
@@ -139,22 +140,22 @@ class Axis:
 
 class ObjectTemplate:
     def __init__(self, object):
-        self.object = object
+        self.__object = object
 
     def set_location(self, location):
-        self.object.location = location
+        self.__object.location = location
 
     def get_location(self):
-        return self.object.location
+        return self.__object.location
 
     def set_rotation(self, rotation, mode="euler"):
-        self.object.rotation_euler = rotation
+        self.__object.rotation_euler = rotation
 
     def get_rotation(self, mode="euler"):
-        return self.object.rotation_euler
+        return self.__object.rotation_euler
 
     def set_parent(self, parent_obj):
-        self.object.parent = parent_obj
+        self.__object.parent = parent_obj
 
 class LuxcoreProjector(ObjectTemplate):
     def __init__(self, name, location=(0,0,0), orientation=(0,0,0), lumens=0, normalize_color_luminance=True, fov_rad=math.pi/6):
@@ -164,7 +165,7 @@ class LuxcoreProjector(ObjectTemplate):
         super().__init__(self.light_object)
         self.light_object.data.luxcore.light_unit = 'lumen'
         self.light_object.data.luxcore.lumen=lumens
-        bpy.context.collection.objects.link(self.light_object)
+        bpy.context.scene.collection.objects.link(self.light_object)
         self.light_object.location = location
         self.light_object.rotation_euler = orientation
         self.light_object.data.luxcore.normalizebycolor=normalize_color_luminance
@@ -213,12 +214,12 @@ class Camera(ObjectTemplate):
         cam = bpy.data.cameras.new(name)
         self.camera = bpy.data.objects.new(name, cam)
         super().__init__(self.camera)
-        bpy.context.collection.objects.link(self.camera)
+        bpy.context.scene.collection.objects.link(self.camera)
         self.camera.location = location
         self.camera.rotation_euler = rotation
         self.axis = Axis(self.camera)
 
-    def render_camera_image(self, filename, directory=None):
+    def render(self, filename, directory=None):
         scene = bpy.context.scene
         scene.camera = self.camera
         scene.render.resolution_x = self.resolution[0]
@@ -264,98 +265,112 @@ class Camera(ObjectTemplate):
             [      0,       0,   1]
         ])
         return K
+
+
     
-class LuxcoreTemplateScanner:
-    def __init__(self, name, lightsource, location=(0,0,0), orientation=(0,0,0), distance_cam_lightsource=0.2, angle=math.pi/20, camera_resolution=(1920,1080), cam_left=True):
-        self.lightsource = lightsource
-        self.camera_resolution=camera_resolution
-        self.camera = Camera(name+"_camera", resolution=camera_resolution)
-
-        if cam_left:
-            self.camera.set_location((-distance_cam_lightsource/2,0,0))
-            self.lightsource.set_location((distance_cam_lightsource/2,0,0))
-            self.camera.set_rotation((0, -angle/2,0))
-            self.lightsource.set_rotation((0, angle/2,0))
-        else:
-            self.camera.set_location((distance_cam_lightsource/2,0,0))
-            self.lightsource.set_location((-distance_cam_lightsource/2,0,0))
-            self.camera.set_rotation((0,angle/2,0))
-            self.lightsource.set_rotation((0, -angle/2,0))
-
-        self.cube = oams.add_cuboid(name, (distance_cam_lightsource, distance_cam_lightsource/2, distance_cam_lightsource/2), (0,0,distance_cam_lightsource/4))
-        self.lightsource.set_parent(self.cube)
-        self.camera.set_parent(self.cube)
+class StereoTemplate(ObjectTemplate):
+    def __init__(self, name, left_optical, right_optical, location=(0,0,0), orientation=(0,0,0), intra_axial_dist=0.2, angle=math.pi/20):
+        self.name = name
+        self.cube = oams.add_cuboid(name, (intra_axial_dist, intra_axial_dist/2, intra_axial_dist/2), (0,0,intra_axial_dist/4))
+        super().__init__(self.cube)
+        self.__left_optical = left_optical
+        self.__right_optical = right_optical
+        self.__left_optical.set_location((-intra_axial_dist/2,0,0))
+        self.__right_optical.set_location((intra_axial_dist/2,0,0))
+        self.__left_optical.set_rotation((0, -angle/2,0))
+        self.__right_optical.set_rotation((0, angle/2, 0))
+        self.__left_optical.set_parent(self.cube)
+        self.__right_optical.set_parent(self.cube)
         self.cube.location = location
         self.cube.rotation_euler = orientation
-    
-
-    def get_essential_matrix(self):
-        t_LC_L = self.get_translation_lightsource_to_cam()
-        R_LC = self.get_rotation_lightsource_to_cam()
-        essential_matrix = R_LC@oarb.vec_to_so3(t_LC_L)
+        
+    def get_essential_matrix(self, right_to_left=True):
+        transl_RL_L = self.get_translation_right_to_left_optical()
+        rot_RL = self.get_rotation_right_to_left_optical()
+        essential_matrix = rot_RL@oarb.vec_to_so3(t_RL_L)
         return essential_matrix
     
-    def get_rotation_cam_to_lightsource(self, mode="matrix"):
-        R_BC = self.camera.axis.get_rotation_parent().to_matrix()
-        R_BL = self.lightsource.axis.get_rotation_parent().to_matrix()
-        R_CB = R_BC.transposed()
-        R_CL = R_CB@R_BL
+    def get_rotation_left_to_right_optical(self, mode="matrix"):
+        rot_BL = self.__left_optical.axis.get_rotation_parent().to_matrix()
+        rot_BR = self.__right_optical.axis.get_rotation_parent().to_matrix()
+        rot_LB = rot_BL.transposed()
+        rot_LR = rot_LB@rot_BR
         if mode=="matrix":
-            return R_CL
+            return rot_LR
         
         elif mode=="euler":
-            return R_CL.to_euler('XYZ')
+            return rot_LR.to_euler('XYZ')
         
         elif mode=="quaternion":
-            return R_CL.to_quaternion()
+            return rot_LR.to_quaternion()
         
         else:
             raise Exception("get_rotation_cam_to_light_source: No mode for " + mode)
             return
 
-    def get_rotation_lightsource_to_cam(self, mode="matrix"):
-        R_BC = self.camera.axis.get_rotation_parent().to_matrix()
-        R_BL = self.lightsource.axis.get_rotation_parent().to_matrix()
-        R_LB = R_BL.transposed()
-        R_LC = R_LB@R_BC
+    def get_rotation_right_to_left_optical(self, mode="matrix"):
+        rot_BL = self.__left_optical.axis.get_rotation_parent().to_matrix()
+        rot_BR = self.__right_optical.axis.get_rotation_parent().to_matrix()
+        rot_RB = rot_BR.transposed()
+        rot_RL = rot_RB@rot_BL
         if mode=="matrix":
-            return R_LC
+            return rot_RL
         
         elif mode=="euler":
-            return R_LC.to_euler('XYZ')
+            return rot_RL.to_euler('XYZ')
         
         elif mode=="quaternion":
-            return R_LC.to_quaternion()
+            return rot_RL.to_quaternion()
         
         else:
             raise Exception("get_rotation_cam_to_light_source: No mode for " + mode)
             return
     
-    def get_translation_cam_to_lightsource(self):
-        t_BL_B = self.lightsource.get_location()
-        t_BC_B = self.camera.get_location()
-        R_CB = self.camera.axis.get_rotation_parent().to_matrix().transposed()
-        t_CL_B = t_BL_B - t_BC_B
-        t_CL_C = R_CB@t_CL_B
-        return t_CL_C
+    def get_translation_left_to_right_optical(self):
+        transl_BR_B = self.__right_optical.get_location()
+        transl_BL_B = self.__left_optical.get_location()
+        rot_LB = self.__left_optical.axis.get_rotation_parent().to_matrix().transposed()
+        transl_LR_B = transl_BR_B - transl_BL_B
+        transl_LR_L = rot_LB@transl_LR_B
+        return transl_LR_L
 
-    def get_translation_lightsource_to_cam(self):
-        t_BL_B = self.lightsource.get_location()
-        t_CL_B = self.camera.get_location()
-        R_LB = self.lightsource.axis.get_rotation_parent().to_matrix().transposed()
-        t_LC_B = t_CL_B - t_BL_B
-        t_LC_L = R_LB@t_LC_B
-        return t_LC_L
+    def get_translation_right_to_left_optical(self):
+        transl_BR_B = self.__right_optical.get_location()
+        transl_BL_B = self.__left_optical.get_location()
+        rot_BR = self.__right_optical.axis.get_rotation_parent().to_matrix()
+        rot_RB = rot_BR.transposed()
+        transl_RL_B = transl_BL_B - transl_BR_B
+        transl_RL_R = rot_RB@transl_RL_B
+        return transl_RL_R
+    
+class StereoCamera(StereoTemplate):
+    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), intra_axial_dist=0.2, angle=math.pi/20, camera_resolution=(1920,1080)):
+        self.left_cam = Camera(name + "_left_cam", resolution=camera_resolution)
+        self.right_cam = Camera(name + "_right_cam", resolution=camera_resolution)
+        super().__init__(name, self.left_cam, self.right_cam, location, orientation, intra_axial_dist, angle)
+    
 
-class LuxcoreLaserScanner(LuxcoreTemplateScanner):
-    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), distance_cam_laser=0.2, angle=math.pi/20, lumens=100, camera_resolution=(1920,1080),cam_left=True):
-        super().__init__(name, LuxcoreLaser(name + "_laser", lumens=lumens), location=location, orientation=orientation, distance_cam_lightsource=distance_cam_laser, angle=angle, camera_resolution=camera_resolution, cam_left=cam_left)
+class LuxcoreLaserScanner(StereoTemplate):
+    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), intra_axial_dist=0.2, angle=math.pi/20, lumens=20, camera_resolution=(1920,1080),cam_left=True):
+        self.camera = Camera(name + "_camera", resolution=camera_resolution)
+        self.laser = LuxcoreLaser(name + "_laser", lumens=lumens)
+        if cam_left:
+            super().__init__(name, self.camera, self.laser, location, orientation, intra_axial_dist, angle)
+        else:
+            super().__init__(name, self.laser, self.camera, location, orientation, intra_axial_dist, angle)
 
-class LuxcoreStructuredLightScanner(LuxcoreTemplateScanner):
-    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), distance_cam_laser=0.2, angle=math.pi/20, lumens=3500, camera_resolution=(1920,1080), laser_resolution=(1920,1080), cam_left=True):
-        super().__init__(name, LuxcoreProjector(name + "_proj", lumens=lumens), location=location, orientation=orientation, distance_cam_lightsource=distance_cam_laser, angle=angle, camera_resolution=camera_resolution, cam_left=cam_left)
-        blue_img = oasli.create_blue_img(laser_resolution[0], laser_resolution[1])
-        self.lightsource.set_projector_image(blue_img)
+
+class LuxcoreStructuredLightScanner(StereoTemplate):
+    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), intra_axial_dist=0.2, angle=math.pi/20, lumens=20, cam_res=(1920,1080), proj_res=(1920, 1080), cam_left=True):
+        self.camera = Camera(name + "_camera", resolution=cam_res)
+        self.projector = LuxcoreLaser(name + "_laser", lumens=lumens)
+        self.__cam_left = cam_left
+        if cam_left:
+            super().__init__(name, self.camera, self.projector, location, orientation, intra_axial_dist, angle)
+        else:
+            super().__init__(name, self.projector, self.camera, location, orientation, intra_axial_dist, angle)
+        blue_img = oasli.create_blue_img(proj_res[0], proj_res[1])
+        self.projector.set_projector_image(blue_img)
 
 
 
