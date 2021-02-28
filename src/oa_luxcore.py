@@ -118,7 +118,7 @@ class Axis:
     def __init__(self, parent):
         self.parent = parent
         self.axis = bpy.data.objects.new( "empty", None )
-        bpy.context.scene.collection.objects.link(self.axis)
+        bpy.context.collection.objects.link(self.axis)
         self.axis.empty_display_size = 1
         self.axis.empty_display_type = 'ARROWS'  
         self.axis.rotation_euler = (math.pi, 0, 0)
@@ -156,6 +156,17 @@ class ObjectTemplate:
 
     def set_parent(self, parent_obj):
         self.__object.parent = parent_obj
+    
+    def get_parent(self):
+        return self.__object.parent
+    
+    def look_at(self, look_at_point):
+        location = self.__object.matrix_world.to_translation()
+        look_at_point = mathutils.Matrix.Translation(look_at_point).to_translation()
+        print(look_at_point)
+        direction = look_at_point - location
+        rot_quat = direction.to_track_quat('-Z', 'Y')
+        self.__object.rotation_euler = rot_quat.to_euler()
 
 class LuxcoreProjector(ObjectTemplate):
     def __init__(self, name, location=(0,0,0), orientation=(0,0,0), lumens=0, normalize_color_luminance=True, fov_rad=math.pi/6):
@@ -165,7 +176,7 @@ class LuxcoreProjector(ObjectTemplate):
         super().__init__(self.light_object)
         self.light_object.data.luxcore.light_unit = 'lumen'
         self.light_object.data.luxcore.lumen=lumens
-        bpy.context.scene.collection.objects.link(self.light_object)
+        bpy.context.collection.objects.link(self.light_object)
         self.light_object.location = location
         self.light_object.rotation_euler = orientation
         self.light_object.data.luxcore.normalizebycolor=normalize_color_luminance
@@ -208,13 +219,14 @@ class LuxcoreLaser(LuxcoreProjector):
 
 
 class Camera(ObjectTemplate):
-    def __init__(self, name, location=(0,0,0), rotation=(0,0,0), resolution=(1920,1080)):
+    def __init__(self, name, location=(0,0,0), rotation=(0,0,0), resolution=(1920,1080), focal_length=50):
         self.name = name
         self.resolution = resolution
         cam = bpy.data.cameras.new(name)
         self.camera = bpy.data.objects.new(name, cam)
         super().__init__(self.camera)
-        bpy.context.scene.collection.objects.link(self.camera)
+        self.camera.data.lens = focal_length
+        bpy.context.collection.objects.link(self.camera)
         self.camera.location = location
         self.camera.rotation_euler = rotation
         self.axis = Axis(self.camera)
@@ -344,9 +356,9 @@ class StereoTemplate(ObjectTemplate):
         return transl_RL_R
     
 class StereoCamera(StereoTemplate):
-    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), intra_axial_dist=0.2, angle=math.pi/20, camera_resolution=(1920,1080)):
-        self.left_cam = Camera(name + "_left_cam", resolution=camera_resolution)
-        self.right_cam = Camera(name + "_right_cam", resolution=camera_resolution)
+    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), intra_axial_dist=0.2, angle=math.pi/20, focal_length=50, camera_resolution=(1920,1080)):
+        self.left_cam = Camera(name + "_left_cam", focal_length=focal_length,resolution=camera_resolution)
+        self.right_cam = Camera(name + "_right_cam", focal_length=focal_length, resolution=camera_resolution)
         super().__init__(name, self.left_cam, self.right_cam, location, orientation, intra_axial_dist, angle)
     
 
@@ -371,6 +383,7 @@ class LuxcoreStructuredLightScanner(StereoTemplate):
             super().__init__(name, self.projector, self.camera, location, orientation, intra_axial_dist, angle)
         blue_img = oasli.create_blue_img(proj_res[0], proj_res[1])
         self.projector.set_projector_image(blue_img)
+    
 
 
 
