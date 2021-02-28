@@ -169,8 +169,9 @@ class ObjectTemplate:
         self.__object.rotation_euler = rot_quat.to_euler()
 
 class LuxcoreProjector(ObjectTemplate):
-    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), lumens=0, normalize_color_luminance=True, fov_rad=math.pi/6):
+    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), lumens=0, normalize_color_luminance=True, fov_rad=math.pi/6, resolution = (1920,1080)):
         self.name = name
+        self.resolution = resolution
         self.spot = bpy.data.lights.new(name=name + "_spot", type='SPOT')
         self.light_object = bpy.data.objects.new(name=name +"_lightobj", object_data=self.spot)
         super().__init__(self.light_object)
@@ -200,13 +201,16 @@ class LuxcoreProjector(ObjectTemplate):
         image.filepath_raw = os.path.join(os.getcwd(), filename)
         image.file_format = 'PNG'
         image.save()
+    
+    def get_resolution(self):
+        return self.resolution
 
 
 
 class LuxcoreLaser(LuxcoreProjector):
-    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), lumens=0, fov_rad=math.pi/6, image_res_x=1000, image_res_y=1000, half_line_width_px=1, laser_color=(255,0,0)):
-        super().__init__(name, location=location, orientation=orientation, lumens=lumens, normalize_color_luminance=True, fov_rad=fov_rad)
-        laser_img = oals.create_laser_scan_line(laser_color, half_line_width_px, image_res_x, image_res_y)
+    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), lumens=0, fov_rad=math.pi/6, resolution=(1920,1080), half_line_width_px=1, laser_color=(255,0,0)):
+        super().__init__(name, location=location, orientation=orientation, lumens=lumens, normalize_color_luminance=True, fov_rad=fov_rad, resolution=resolution)
+        laser_img = oals.create_laser_scan_line(laser_color, half_line_width_px, resolution[0], resolution[1])
         self.set_projector_image(laser_img)
 
     def set_laser_image(self, laser_color, half_line_width_px, image_res_x, image_res_y):
@@ -383,6 +387,11 @@ class LuxcoreStructuredLightScanner(StereoTemplate):
             super().__init__(name, self.projector, self.camera, location, orientation, intra_axial_dist, angle)
         blue_img = oasli.create_blue_img(proj_res[0], proj_res[1])
         self.projector.set_projector_image(blue_img)
+    
+    def set_graycode_pattern(self, pattern_number=2):
+        projector_res = self.projector.get_resolution()
+        graycode_pattern = oasli.create_gray_code_pattern(pattern_number, projector_res[0], projector_res[1])
+        self.projector.set_projector_image(graycode_pattern)
     
 
 
