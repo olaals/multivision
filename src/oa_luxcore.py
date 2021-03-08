@@ -79,8 +79,10 @@ class ObjectTemplate:
         self.__object.rotation_euler = rot_quat.to_euler()
 
 class LuxcoreProjector(ObjectTemplate):
-    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), lumens=0, normalize_color_luminance=True, fov_rad=math.pi/6, resolution = (1920,1080)):
+    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), lumens=0, normalize_color_luminance=True, resolution = (1920,1080), focal_length=36, px_size_mm=10e-3):
         self.name = name
+        self.focal_length = focal_length
+        self.px_size_mm = px_size_mm
         self.resolution = resolution
         self.spot = bpy.data.lights.new(name=name + "_spot", type='SPOT')
         self.light_object = bpy.data.objects.new(name=name +"_lightobj", object_data=self.spot)
@@ -91,8 +93,38 @@ class LuxcoreProjector(ObjectTemplate):
         self.light_object.location = location
         self.light_object.rotation_euler = orientation
         self.light_object.data.luxcore.normalizebycolor=normalize_color_luminance
-        self.light_object.data.spot_size = fov_rad
         self.axis = Axis(self.light_object)
+        self.update_fov()
+        self.projection_image = None
+
+    def update_fov(self):
+        theta = 2*np.arctan((self.px_size_mm*min(self.resolution[0], self.resolution[1]))/(2*self.focal_length))
+        self.light_object.data.spot_size = theta
+
+    def get_image(self):
+        if self.projection_image is None:
+            raise Exception("Projection image is None")
+        return self.projection_image
+
+    def set_projector_parameters(self, focal_length, px_size_mm, resolution):
+        self.focal_length = focal_length
+        self.px_size_mm = px_size_mm
+        self.resolution = resolution
+        self.update_fov()
+
+
+
+    def get_camera_matrix(self):
+        focal = self.focal_length
+        u_0 = self.resolution[0]/2
+        v_0 = self.resolution[1]/2
+        K = np.array([
+            [focal/self.pixel_size_mm,    0.0, u_0],
+            [      0, focal/self.pixel_size_mm, v_0],
+            [      0,       0,   1]
+        ])
+
+        return 
 
     def set_projector_image(self, image, numpy_image=True):
         if numpy_image:
@@ -122,8 +154,8 @@ class CyclesProjector(ObjectTemplate):
 
 
 class LuxcoreLaser(LuxcoreProjector):
-    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), lumens=0, fov_rad=math.pi/6, resolution=(1920,1080), half_line_width_px=1, laser_color=(255,0,0)):
-        super().__init__(name, location=location, orientation=orientation, lumens=lumens, normalize_color_luminance=True, fov_rad=fov_rad, resolution=resolution)
+    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), lumens=0, resolution=(1920,1080), half_line_width_px=1, laser_color=(255,0,0), focal_length=36, self.px_size_mm=10e-3):
+        super().__init__(name, location=location, orientation=orientation, lumens=lumens, normalize_color_luminance=True, resolution=resolution, focal_length=focal_length, px_size_mm=px_size_mm)
         laser_img = oals.create_laser_scan_line(laser_color, half_line_width_px, resolution[0], resolution[1])
         self.set_projector_image(laser_img)
 
@@ -180,29 +212,7 @@ class Camera(ObjectTemplate):
         camdata = self.camera.data
         focal = camdata.lens # mm
         sensor_width = camdata.sensor_width # mm
-        print("Sensor width")
-        print(sensor_width)
         sensor_height = camdata.sensor_height # mm
-        print("Sensor height")
-        print(sensor_height)
-        #pixel_aspect_ratio = scene.render.pixel_aspect_x / scene.render.pixel_aspect_y
-        #pixel_aspect_ratio = 1.0
-        #print("pixel aspect ratio")
-        #print(pixel_aspect_ratio)
-        #if (camdata.sensor_fit == 'VERTICAL'):
-            # the sensor height is fixed (sensor fit is horizontal), 
-            # the sensor width is effectively changed with the pixel aspect ratio
-            #s_u = width / sensor_height / pixel_aspect_ratio 
-            #s_v = height / sensor_height
-        #else: # 'HORIZONTAL' and 'AUTO'
-            #print("HORIZONTAL")
-            # the sensor width is fixed (sensor fit is horizontal), 
-            # the sensor height is effectively changed with the pixel aspect ratio
-            #s_u = width / sensor_width
-            #s_v = height * pixel_aspect_ratio / sensor_width
-        # parameters of intrinsic calibration matrix K
-        #alpha_u = focal * s_u
-        #alpha_v = focal * s_v
         u_0 = width / 2
         v_0 = height / 2
         #skew = 0 # only use rectangular pixels
@@ -394,6 +404,7 @@ class LuxcoreStructuredLightScanner(StereoTemplate):
             super().__init__(name, self.projector, self.camera, location, orientation, intra_axial_dist, angle)
         blue_img = oasli.create_blue_img(proj_res[0], proj_res[1])
         self.projector.set_projector_image(blue_img)
+
     
     def set_graycode_pattern(self, pattern_number=4):
         projector_res = self.projector.get_resolution()

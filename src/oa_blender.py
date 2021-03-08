@@ -64,6 +64,16 @@ def get_image_list_from_folder(directory):
         pattern_img_list.append(image)
     return pattern_img_list
 
+def numpy_img_to_blender_img3(numpy_img):
+    size = np.shape(numpy_img)[1], np.shape(numpy_img)[0]
+    image = bpy.data.images.new("blImg", width=size[0], height=size[1], alpha=False)
+    pixels = np.dstack((numpy_img, np.ones(numpy_img.shape[:-1], dtype=np.uint8)))
+    pixels = pixels.flatten()
+    pixels = list(pixels)
+    image.pixels = pixels
+    return image
+
+"""
 def numpy_img_to_blender_img(numpy_img):
     size = np.shape(numpy_img)[1], np.shape(numpy_img)[0]
     image = bpy.data.images.new("blImg", width=size[0], height=size[1], alpha=False)
@@ -80,6 +90,24 @@ def numpy_img_to_blender_img(numpy_img):
     pixels = [chan for px in pixels for chan in px]
     image.pixels = pixels
     return image
+"""
+
+def numpy_img_to_blender_img2(numpy_img):
+    size = np.shape(numpy_img)[1], np.shape(numpy_img)[0]
+    #image = bpy.data.images.new("blImg", width=size[0], height=size[1], alpha=False)
+    pixels = [None] * size[0] * size[1]
+    for x in range(size[0]):
+        for y in range(size[1]):
+            a = 1.0
+            r = numpy_img[y,x,0]
+            g = numpy_img[y,x,1]
+            b = numpy_img[y,x,2]
+
+            pixels[(y * size[0]) + x] = [r, g, b, a]
+
+    pixels = [chan for px in pixels for chan in px]
+    #image.pixels = pixels
+    return pixels
 
 def get_camera_matrix():
     scene = bpy.context.scene
@@ -149,6 +177,10 @@ class Projector:
         self.proj.proj_settings.use_custom_texture_res = True
 
 
+if __name__ == '__main__':
+    a = np.ones((5,4,3))
+    a_shape = a.shape
+    print(a_shape)
 
 
    
