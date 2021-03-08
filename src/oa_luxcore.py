@@ -9,6 +9,7 @@ import numpy as np
 import os
 import copy
 import mathutils
+import cv2
 
 
 def luxcore_setup(render_time=60):
@@ -136,16 +137,17 @@ class LuxcoreLaser(LuxcoreProjector):
 
 
 class Camera(ObjectTemplate):
-    def __init__(self, name, location=(0,0,0), rotation=(0,0,0), resolution=(1920,1080), focal_length=50, pixel_size_mm=0.02):
+    def __init__(self, name, location=(0,0,0), rotation=(0,0,0), resolution=(1920,1080), focal_length=50, pixel_size_mm=10e-3):
         self.name = name
         self.resolution = resolution
+        self.pixel_size_mm = pixel_size_mm
         cam = bpy.data.cameras.new(name)
         self.camera = bpy.data.objects.new(name, cam)
         super().__init__(self.camera)
         self.camera.data.lens = focal_length
-        #self.camera.data.sensor_fit = 'HORIZONTAL'
-        #self.camera.data.sensor_width = pixel_size_mm*resolution[0]
-        #self.camera.data.sensor_height = pixel_size_mm*resolution[1]
+        self.camera.data.sensor_fit = 'HORIZONTAL'
+        self.camera.data.sensor_width = resolution[0]*pixel_size_mm
+        self.camera.data.sensor_height = resolution[1]*pixel_size_mm
         bpy.context.collection.objects.link(self.camera)
         self.camera.location = location
         self.camera.rotation_euler = rotation
@@ -161,6 +163,14 @@ class Camera(ObjectTemplate):
         else:
             scene.render.filepath = os.path.join(os.getcwd(), directory, filename)
         bpy.ops.render.render(write_still=True)
+    
+    def get_image(self):
+        self.render("latest_render.png")
+        img = cv2.imread("latest_render.png")
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        return img
+
+
 
     def get_camera_matrix(self):
         #scene = bpy.context.scene
@@ -176,28 +186,29 @@ class Camera(ObjectTemplate):
         print("Sensor height")
         print(sensor_height)
         #pixel_aspect_ratio = scene.render.pixel_aspect_x / scene.render.pixel_aspect_y
-        pixel_aspect_ratio = 1.0
+        #pixel_aspect_ratio = 1.0
         #print("pixel aspect ratio")
         #print(pixel_aspect_ratio)
-        if (camdata.sensor_fit == 'VERTICAL'):
+        #if (camdata.sensor_fit == 'VERTICAL'):
             # the sensor height is fixed (sensor fit is horizontal), 
             # the sensor width is effectively changed with the pixel aspect ratio
-            s_u = width / sensor_width / pixel_aspect_ratio 
-            s_v = height / sensor_height
-        else: # 'HORIZONTAL' and 'AUTO'
+            #s_u = width / sensor_height / pixel_aspect_ratio 
+            #s_v = height / sensor_height
+        #else: # 'HORIZONTAL' and 'AUTO'
+            #print("HORIZONTAL")
             # the sensor width is fixed (sensor fit is horizontal), 
             # the sensor height is effectively changed with the pixel aspect ratio
-            s_u = width / sensor_width
-            s_v = height * pixel_aspect_ratio / sensor_width
+            #s_u = width / sensor_width
+            #s_v = height * pixel_aspect_ratio / sensor_width
         # parameters of intrinsic calibration matrix K
-        alpha_u = focal * s_u
-        alpha_v = focal * s_v
+        #alpha_u = focal * s_u
+        #alpha_v = focal * s_v
         u_0 = width / 2
         v_0 = height / 2
-        skew = 0 # only use rectangular pixels
+        #skew = 0 # only use rectangular pixels
         K = np.array([
-            [alpha_u,    skew, u_0],
-            [      0, alpha_v, v_0],
+            [focal/self.pixel_size_mm,    0.0, u_0],
+            [      0, focal/self.pixel_size_mm, v_0],
             [      0,       0,   1]
         ])
         return K
@@ -227,13 +238,16 @@ class StereoTemplate(ObjectTemplate):
         essential_matrix = rot_RL@oarb.vec_to_so3(transl_RL_R)
         return essential_matrix
     
-    def get_rotation_left_to_right_optical(self, mode="matrix"):
+    def get_rotation_left_to_right_optical(self, mode="matrix", return_numpy=False):
         rot_BL = self.__left_optical.axis.get_rotation_parent().to_matrix()
         rot_BR = self.__right_optical.axis.get_rotation_parent().to_matrix()
         rot_LB = rot_BL.transposed()
         rot_LR = rot_LB@rot_BR
         if mode=="matrix":
-            return rot_LR
+            if return_numpy:
+                return np.array(rot_LR)
+            else:
+                return rot_LR
         
         elif mode=="euler":
             return rot_LR.to_euler('XYZ')
@@ -245,13 +259,17 @@ class StereoTemplate(ObjectTemplate):
             raise Exception("get_rotation_cam_to_light_source: No mode for " + mode)
             return
 
-    def get_rotation_right_to_left_optical(self, mode="matrix"):
+    def get_rotation_right_to_left_optical(self, mode="matrix", return_numpy=False):
         rot_BL = self.__left_optical.axis.get_rotation_parent().to_matrix()
         rot_BR = self.__right_optical.axis.get_rotation_parent().to_matrix()
         rot_RB = rot_BR.transposed()
         rot_RL = rot_RB@rot_BL
         if mode=="matrix":
-            return rot_RL
+            if return_numpy:
+                return np.array(rot_RL)
+            else:
+                return rot_RL
+
         
         elif mode=="euler":
             return rot_RL.to_euler('XYZ')
@@ -271,17 +289,49 @@ class StereoTemplate(ObjectTemplate):
         transl_LR_L = rot_LB@transl_LR_B
         return transl_LR_L
 
-    def get_translation_right_to_left_optical(self):
+    def get_translation_right_to_left_optical(self, return_numpy=False):
         transl_BR_B = self.__right_optical.get_location()
         transl_BL_B = self.__left_optical.get_location()
         rot_BR = self.__right_optical.axis.get_rotation_parent().to_matrix()
         rot_RB = rot_BR.transposed()
         transl_RL_B = transl_BL_B - transl_BR_B
         transl_RL_R = rot_RB@transl_RL_B
-        return transl_RL_R
+
+        if return_numpy:
+            return np.array(transl_RL_R)
+        else:
+            return transl_RL_R
+
+    def get_rectified_image_pair(self, crop_parameter):
+        left_img = self.__left_optical.get_image()
+        right_img = self.__right_optical.get_image()
+        left_img_size = left_img.shape[0:2][::-1]
+        print("Left img size")
+        print(left_img_size)
+        print("type")
+        print(type(left_img_size))
+        right_img_size = right_img.shape[0:2][::-1]
+        left_K = self.__left_optical.get_camera_matrix()
+        right_K = self.__right_optical.get_camera_matrix()
+        transl_RL_R = self.get_translation_right_to_left_optical(return_numpy=True)
+        print("transl_RL_R")
+        print(transl_RL_R)
+        rot_RL = self.get_rotation_right_to_left_optical(return_numpy=True)
+        print("rot_RL")
+        print(rot_RL)
+        distCoeffs = None
+
+        R1,R2,P1,P2,Q,_,_ = cv2.stereoRectify(left_K, distCoeffs, right_K, distCoeffs, left_img_size, rot_RL, transl_RL_R, alpha=crop_parameter)
+        left_maps = cv2.initUndistortRectifyMap(left_K, distCoeffs, R1, P1, left_img_size, cv2.CV_16SC2)
+        right_maps = cv2.initUndistortRectifyMap(right_K, distCoeffs, R2, P2, right_img_size, cv2.CV_16SC2)
+        left_img_remap = cv2.remap(left_img, left_maps[0], left_maps[1], cv2.INTER_LANCZOS4)
+        right_img_remap = cv2.remap(right_img, right_maps[0], right_maps[1], cv2.INTER_LANCZOS4)
+        return left_img_remap, right_img_remap
+
+
     
 class StereoCamera(StereoTemplate):
-    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), intra_axial_dist=0.2, angle=math.pi/20, focal_length=50, camera_resolution=(1920,1080)):
+    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), intra_axial_dist=0.2, angle=math.pi/20, focal_length=36, camera_resolution=(1920,1080)):
         self.left_cam = Camera(name + "_left_cam", focal_length=focal_length,resolution=camera_resolution)
         self.right_cam = Camera(name + "_right_cam", focal_length=focal_length, resolution=camera_resolution)
         super().__init__(name, self.left_cam, self.right_cam, location, orientation, intra_axial_dist, angle)
