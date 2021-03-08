@@ -47,12 +47,6 @@ class Axis:
         return R_BA.to_euler()
         
 
-
-
-
-
-
-
 class ObjectTemplate:
     def __init__(self, object):
         self.__object = object
@@ -142,13 +136,16 @@ class LuxcoreLaser(LuxcoreProjector):
 
 
 class Camera(ObjectTemplate):
-    def __init__(self, name, location=(0,0,0), rotation=(0,0,0), resolution=(1920,1080), focal_length=50):
+    def __init__(self, name, location=(0,0,0), rotation=(0,0,0), resolution=(1920,1080), focal_length=50, pixel_size_mm=0.02):
         self.name = name
         self.resolution = resolution
         cam = bpy.data.cameras.new(name)
         self.camera = bpy.data.objects.new(name, cam)
         super().__init__(self.camera)
         self.camera.data.lens = focal_length
+        #self.camera.data.sensor_fit = 'HORIZONTAL'
+        #self.camera.data.sensor_width = pixel_size_mm*resolution[0]
+        #self.camera.data.sensor_height = pixel_size_mm*resolution[1]
         bpy.context.collection.objects.link(self.camera)
         self.camera.location = location
         self.camera.rotation_euler = rotation
@@ -173,7 +170,11 @@ class Camera(ObjectTemplate):
         camdata = self.camera.data
         focal = camdata.lens # mm
         sensor_width = camdata.sensor_width # mm
+        print("Sensor width")
+        print(sensor_width)
         sensor_height = camdata.sensor_height # mm
+        print("Sensor height")
+        print(sensor_height)
         #pixel_aspect_ratio = scene.render.pixel_aspect_x / scene.render.pixel_aspect_y
         pixel_aspect_ratio = 1.0
         #print("pixel aspect ratio")
@@ -187,7 +188,7 @@ class Camera(ObjectTemplate):
             # the sensor width is fixed (sensor fit is horizontal), 
             # the sensor height is effectively changed with the pixel aspect ratio
             s_u = width / sensor_width
-            s_v = height * pixel_aspect_ratio / sensor_height
+            s_v = height * pixel_aspect_ratio / sensor_width
         # parameters of intrinsic calibration matrix K
         alpha_u = focal * s_u
         alpha_v = focal * s_v
@@ -220,9 +221,10 @@ class StereoTemplate(ObjectTemplate):
         self.cube.rotation_euler = orientation
         
     def get_essential_matrix(self, right_to_left=True):
-        transl_RL_L = self.get_translation_right_to_left_optical()
+        transl_RL_R = self.get_translation_right_to_left_optical()
         rot_RL = self.get_rotation_right_to_left_optical()
-        essential_matrix = rot_RL@oarb.vec_to_so3(t_RL_L)
+        rot_RL = np.array(rot_RL)
+        essential_matrix = rot_RL@oarb.vec_to_so3(transl_RL_R)
         return essential_matrix
     
     def get_rotation_left_to_right_optical(self, mode="matrix"):
@@ -284,6 +286,42 @@ class StereoCamera(StereoTemplate):
         self.right_cam = Camera(name + "_right_cam", focal_length=focal_length, resolution=camera_resolution)
         super().__init__(name, self.left_cam, self.right_cam, location, orientation, intra_axial_dist, angle)
     
+    def save_matrices_numpy(self, directory = "", print_matrices=False):
+        left_cam_K = self.left_cam.get_camera_matrix()
+        right_cam_K = self.right_cam.get_camera_matrix()
+        transl_RL_R = self.get_translation_right_to_left_optical()
+        transl_LR_L = self.get_translation_left_to_right_optical()
+        essential = self.get_essential_matrix()
+        rot_RL = self.get_rotation_right_to_left_optical()
+        rot_LR = self.get_rotation_left_to_right_optical()
+
+        np.save(os.path.join(directory, "left_cam_K"), left_cam_K)
+        np.save(os.path.join(directory, "right_cam_K"), right_cam_K)
+        np.save(os.path.join(directory, "transl_RL_R"), transl_RL_R)
+        np.save(os.path.join(directory, "transl_LR_L"), transl_LR_L)
+        np.save(os.path.join(directory, "rot_RL"), rot_RL)
+        np.save(os.path.join(directory, "rot_LR"), rot_LR)
+        np.save(os.path.join(directory, "essential"), essential)
+        if print_matrices:
+            print("Left camera matrix")
+            print(left_cam_K)
+            print("Right camera matrix")
+            print(right_cam_K)
+            print("Translation right to left camera")
+            print(transl_RL_R)
+            print("Translatiom left to right camera")
+            print(transl_LR_L)
+            print("Rotation left to right camera")
+            print(rot_LR)
+            print(rot_LR.to_euler())
+            print("Rotation right to left camera")
+            print(rot_RL)
+            print(rot_RL.to_euler())
+            print("Essential matrix")
+            print(essential)
+
+
+
 
 class LuxcoreLaserScanner(StereoTemplate):
     def __init__(self, name, location=(0,0,0), orientation=(0,0,0), intra_axial_dist=0.2, angle=math.pi/20, lumens=20, camera_resolution=(1920,1080),cam_left=True):
