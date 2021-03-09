@@ -78,6 +78,63 @@ class ObjectTemplate:
         rot_quat = direction.to_track_quat('-Z', 'Y')
         self.__object.rotation_euler = rot_quat.to_euler()
 
+class CyclesProjector(ObjectTemplate):
+    def __init__(self, name="CyclesProj", location=(0,0,0), orientation=(0,0,0), lumens=0, resolution = (1920,1080), focal_length=36, px_size_mm=10e-3):
+        self.name = name
+        self.focal_length = focal_length
+        self.px_size_mm = px_size_mm
+        self.resolution = resolution
+        self.create_cycles_projector()
+        super().__init__(self.light_object)
+        bpy.context.collection.objects.link(self.light_object)
+        self.light_object.location = location
+        self.light_object.rotation_euler = orientation
+        self.axis = Axis(self.light_object)
+        self.update_fov()
+        self.projection_image = None
+
+    def create_cycles_projector(self):
+        spot = bpy.data.lights.new(self.name+"_spot", type="SPOT")
+        self.spot = spot
+        spot_obj = bpy.data.objects.new(self.name ,spot)
+        spot_obj.scale = (0.1,0.1,0.1)
+        self.light_object = spot_obj
+        spot.spot_size=3.14
+        spot.energy = 1000
+        spot.shadow_soft_size = 0
+        #bpy.context.collection.objects.link(spot_obj)
+
+        spot.use_nodes = True
+
+        node_tree = spot.node_tree
+        nodes = node_tree.nodes
+
+        output_node = nodes["Light Output"]
+        emission = nodes["Emission"]
+        img_text_node = nodes.new("ShaderNodeTexImage")
+        img_text_node.extension = 'CLIP'
+        node_tree.links.new(img_text_node.outputs[0], emission.inputs[0])
+        mapping_node = nodes.new("ShaderNodeMapping")
+        mapping_node.inputs[1].default_value[0] = 0.5
+        mapping_node.inputs[1].default_value[1] = 0.5
+        node_tree.links.new(mapping_node.outputs[0], img_text_node.inputs[0])
+        vector_divide_node = nodes.new("ShaderNodeVectorMath")
+        vector_divide_node.operation = 'DIVIDE'
+        node_tree.links.new(vector_divide_node.outputs[0], mapping_node.inputs[0])
+        seperate_XYZ_node = nodes.new("ShaderNodeSeparateXYZ")
+        node_tree.links.new(seperate_XYZ_node.outputs[2], vector_divide_node.inputs[1])
+        tex_coord_node = nodes.new("ShaderNodeTexCoord")
+        node_tree.links.new(tex_coord_node.outputs[1], seperate_XYZ_node.inputs[0])
+        node_tree.links.new(tex_coord_node.outputs[1], vector_divide_node.inputs[0])
+
+        self.mapping_node = mapping_node
+        self.img_text_node = img_text_node
+
+    def set_projector_image(self, image, numpy_image=True):
+        if numpy_image:
+            image = oabl.numpy_img_to_blender_img(image) # convert to blender image
+        self.img_text_node.image = image
+
 class LuxcoreProjector(ObjectTemplate):
     def __init__(self, name, location=(0,0,0), orientation=(0,0,0), lumens=0, normalize_color_luminance=True, resolution = (1920,1080), focal_length=36, px_size_mm=10e-3):
         self.name = name
