@@ -27,17 +27,19 @@ def luxcore_setup(render_time=60):
     bpy.context.scene.luxcore.viewport.denoise = False
     bpy.context.scene.luxcore.viewport.add_light_tracing = False
 
+def cycles_setup():
+    bpy.context.scene.render.engine = 'CYCLES'
     
 
 
 class Axis:
-    def __init__(self, parent):
+    def __init__(self, parent, rotation=math.pi):
         self.parent = parent
         self.axis = bpy.data.objects.new( "empty", None )
         bpy.context.collection.objects.link(self.axis)
         self.axis.empty_display_size = 1
         self.axis.empty_display_type = 'ARROWS'  
-        self.axis.rotation_euler = (math.pi, 0, 0)
+        self.axis.rotation_euler = (rotation, 0, 0)
         self.axis.parent = parent
     
     def get_rotation_parent(self):
@@ -80,6 +82,7 @@ class ObjectTemplate:
 
 class CyclesProjector(ObjectTemplate):
     def __init__(self, name="CyclesProj", location=(0,0,0), orientation=(0,0,0), lumens=0, resolution = (1920,1080), focal_length=36, px_size_mm=10e-3):
+        print("Cycles proj init")
         self.name = name
         self.focal_length = focal_length
         self.px_size_mm = px_size_mm
@@ -89,8 +92,9 @@ class CyclesProjector(ObjectTemplate):
         bpy.context.collection.objects.link(self.light_object)
         self.light_object.location = location
         self.light_object.rotation_euler = orientation
-        self.axis = Axis(self.light_object)
+        self.axis = Axis(self.light_object, rotation=math.pi)
         self.update_fov()
+        self.set_default_image()
         self.projection_image = None
 
     def create_cycles_projector(self):
@@ -117,6 +121,7 @@ class CyclesProjector(ObjectTemplate):
         mapping_node = nodes.new("ShaderNodeMapping")
         mapping_node.inputs[1].default_value[0] = 0.5
         mapping_node.inputs[1].default_value[1] = 0.5
+        mapping_node.inputs[2].default_value[2] = math.pi
         node_tree.links.new(mapping_node.outputs[0], img_text_node.inputs[0])
         vector_divide_node = nodes.new("ShaderNodeVectorMath")
         vector_divide_node.operation = 'DIVIDE'
@@ -134,6 +139,31 @@ class CyclesProjector(ObjectTemplate):
         if numpy_image:
             image = oabl.numpy_img_to_blender_img(image) # convert to blender image
         self.img_text_node.image = image
+    
+    def update_fov(self):
+        scale_x = self.focal_length/(self.resolution[0]*self.px_size_mm)
+        scale_y = self.focal_length/(self.resolution[1]*self.px_size_mm)
+        self.mapping_node.inputs[3].default_value[0] = scale_x
+        self.mapping_node.inputs[3].default_value[1] = scale_y
+
+    
+    def get_image(self):
+        pass
+
+    def set_projector_parameters(self, focal_length, pix_size_mm, resolution):
+        pass
+
+    def get_camera_matrix(self):
+        pass
+
+    def get_resolution(self):
+        return self.resolution
+
+    def set_default_image(self):
+        proj_res = self.resolution
+        blue_img = oasli.create_blue_img(proj_res[0], proj_res[1])
+        self.set_projector_image(blue_img)
+
 
 class LuxcoreProjector(ObjectTemplate):
     def __init__(self, name, location=(0,0,0), orientation=(0,0,0), lumens=0, normalize_color_luminance=True, resolution = (1920,1080), focal_length=36, px_size_mm=10e-3):
@@ -203,10 +233,6 @@ class LuxcoreProjector(ObjectTemplate):
     
     def get_resolution(self):
         return self.resolution
-
-class CyclesProjector(ObjectTemplate):
-    def __init__(self, name, location=(0,0,0), power=0):
-        pass
 
 
 
