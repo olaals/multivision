@@ -64,7 +64,7 @@ def get_image_list_from_folder(directory):
         pattern_img_list.append(image)
     return pattern_img_list
 
-def numpy_img_to_blender_img3(numpy_img):
+def numpy_img_to_blender_img(numpy_img):
     size = np.shape(numpy_img)[1], np.shape(numpy_img)[0]
     image = bpy.data.images.new("blImg", width=size[0], height=size[1], alpha=False)
     pixels = np.dstack((numpy_img, np.ones(numpy_img.shape[:-1], dtype=np.uint8)))

@@ -154,7 +154,7 @@ class CyclesProjector(ObjectTemplate):
 
 
 class LuxcoreLaser(LuxcoreProjector):
-    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), lumens=0, resolution=(1920,1080), half_line_width_px=1, laser_color=(255,0,0), focal_length=36, self.px_size_mm=10e-3):
+    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), lumens=0, resolution=(1920,1080), half_line_width_px=1, laser_color=(255,0,0), focal_length=36, px_size_mm=10e-3):
         super().__init__(name, location=location, orientation=orientation, lumens=lumens, normalize_color_luminance=True, resolution=resolution, focal_length=focal_length, px_size_mm=px_size_mm)
         laser_img = oals.create_laser_scan_line(laser_color, half_line_width_px, resolution[0], resolution[1])
         self.set_projector_image(laser_img)
@@ -169,7 +169,7 @@ class LuxcoreLaser(LuxcoreProjector):
 
 
 class Camera(ObjectTemplate):
-    def __init__(self, name, location=(0,0,0), rotation=(0,0,0), resolution=(1920,1080), focal_length=50, pixel_size_mm=10e-3):
+    def __init__(self, name, location=(0,0,0), rotation=(0,0,0), resolution=(1920,1080), focal_length=36, pixel_size_mm=10e-3):
         self.name = name
         self.resolution = resolution
         self.pixel_size_mm = pixel_size_mm
@@ -394,7 +394,7 @@ class LuxcoreLaserScanner(StereoTemplate):
 
 
 class LuxcoreStructuredLightScanner(StereoTemplate):
-    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), intra_axial_dist=0.2, angle=math.pi/20, lumens=20, cam_res=(1920,1080), proj_res=(1920, 1080), cam_left=True):
+    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), intra_axial_dist=0.2, angle=math.pi/20, lumens=1000, cam_res=(1920,1080), proj_res=(1920, 1080), cam_left=True):
         self.camera = Camera(name + "_camera", resolution=cam_res)
         self.projector = LuxcoreLaser(name + "_laser", lumens=lumens)
         self.__cam_left = cam_left
