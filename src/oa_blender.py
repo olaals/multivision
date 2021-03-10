@@ -75,7 +75,8 @@ def numpy_img_to_blender_img(numpy_img):
 
 def blender_img_to_numpy_img(blender_img):
     np_img = np.array(blender_img.pixels)
-    np_img = np.delete(np_img, np.arange(3, np_img.size, 4))
+    if blender_img.channels == 4:
+        np_img = np.delete(np_img, np.arange(3, np_img.size, 4))
     np_img = np.resize(np_img, (blender_img.size[1], blender_img.size[0], 3))
     return np_img
 

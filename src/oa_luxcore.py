@@ -230,9 +230,12 @@ class LuxcoreProjector(ObjectTemplate):
 
     def set_projector_image(self, image, numpy_image=True):
         if numpy_image:
+            self.projection_image = image
             image = oabl.numpy_img_to_blender_img(image) # convert to blender image
+        else:
+            self.projection_image = oabl.blender_img_to_numpy_img(image)
+            
         self.spot.luxcore.image = image
-        self.projection_image = image
 
     def set_lumens(self, lumens):
         self.lumens = lumens
@@ -490,6 +493,10 @@ class LuxcoreLaserScanner(StereoTemplate):
             super().__init__(name, self.camera, self.laser, location, orientation, intra_axial_dist, angle)
         else:
             super().__init__(name, self.laser, self.camera, location, orientation, intra_axial_dist, angle)
+    
+    def get_filtered_scan(self):
+        pass
+
 
 
 class LuxcoreStructuredLightScanner(StereoTemplate):
