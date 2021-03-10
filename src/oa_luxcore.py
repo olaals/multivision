@@ -81,8 +81,7 @@ class ObjectTemplate:
         self.__object.rotation_euler = rot_quat.to_euler()
 
 class CyclesProjector(ObjectTemplate):
-    def __init__(self, name="CyclesProj", location=(0,0,0), orientation=(0,0,0), lumens=0, resolution = (1920,1080), focal_length=36, px_size_mm=10e-3):
-        print("Cycles proj init")
+    def __init__(self, name="CyclesProj", location=(0,0,0), orientation=(0,0,0), resolution = (1920,1080), focal_length=36, px_size_mm=10e-3, light_strength=1000):
         self.name = name
         self.focal_length = focal_length
         self.px_size_mm = px_size_mm
@@ -101,7 +100,7 @@ class CyclesProjector(ObjectTemplate):
         spot = bpy.data.lights.new(self.name+"_spot", type="SPOT")
         self.spot = spot
         spot_obj = bpy.data.objects.new(self.name ,spot)
-        spot_obj.scale = (0.1,0.1,0.1)
+        #spot_obj.scale = (0.1,0.1,0.1) TODO: how to scale parent without scaling children (Axis becomes small)
         self.light_object = spot_obj
         spot.spot_size=3.14
         spot.energy = 1000
@@ -137,7 +136,9 @@ class CyclesProjector(ObjectTemplate):
 
     def set_projector_image(self, image, numpy_image=True):
         if numpy_image:
+            self.projection_image = image
             image = oabl.numpy_img_to_blender_img(image) # convert to blender image
+
         self.img_text_node.image = image
     
     def update_fov(self):
@@ -154,7 +155,15 @@ class CyclesProjector(ObjectTemplate):
         pass
 
     def get_camera_matrix(self):
-        pass
+        focal = self.focal_length
+        u_0 = self.resolution[0]/2
+        v_0 = self.resolution[1]/2
+        K = np.array([
+            [focal/self.pixel_size_mm,    0.0, u_0],
+            [      0, focal/self.pixel_size_mm, v_0],
+            [      0,       0,   1]
+        ])
+        return K
 
     def get_resolution(self):
         return self.resolution
@@ -166,12 +175,13 @@ class CyclesProjector(ObjectTemplate):
 
 
 class LuxcoreProjector(ObjectTemplate):
-    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), lumens=0, normalize_color_luminance=True, resolution = (1920,1080), focal_length=36, px_size_mm=10e-3):
+    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), lumens=1000, normalize_color_luminance=True, resolution = (1920,1080), focal_length=36, px_size_mm=10e-3):
         self.name = name
         self.focal_length = focal_length
         self.px_size_mm = px_size_mm
         self.resolution = resolution
         self.spot = bpy.data.lights.new(name=name + "_spot", type='SPOT')
+        self.lumens = lumens
         self.light_object = bpy.data.objects.new(name=name +"_lightobj", object_data=self.spot)
         super().__init__(self.light_object)
         self.light_object.data.luxcore.light_unit = 'lumen'
@@ -198,6 +208,12 @@ class LuxcoreProjector(ObjectTemplate):
         self.px_size_mm = px_size_mm
         self.resolution = resolution
         self.update_fov()
+    
+    def turn_off_projector(self):
+        self.light_object.luxcore.lumen = 0
+    
+    def turn_on_projector(self):
+        self.light_object.luxcore.lumen = self.lumens
 
 
 
@@ -210,8 +226,7 @@ class LuxcoreProjector(ObjectTemplate):
             [      0, focal/self.pixel_size_mm, v_0],
             [      0,       0,   1]
         ])
-
-        return 
+        return K
 
     def set_projector_image(self, image, numpy_image=True):
         if numpy_image:
@@ -220,6 +235,7 @@ class LuxcoreProjector(ObjectTemplate):
         self.projection_image = image
 
     def set_lumens(self, lumens):
+        self.lumens = lumens
         self.light_object.data.luxcore.lumen = lumens
 
     def get_lumens(self):
