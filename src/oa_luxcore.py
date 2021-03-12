@@ -10,6 +10,7 @@ import os
 import copy
 import mathutils
 import cv2
+from oa_stereo_utils import *
 
 
 def luxcore_setup(render_time=60):
@@ -210,10 +211,10 @@ class LuxcoreProjector(ObjectTemplate):
         self.update_fov()
     
     def turn_off_projector(self):
-        self.light_object.luxcore.lumen = 0
+        self.spot.luxcore.lumen = 0
     
     def turn_on_projector(self):
-        self.light_object.luxcore.lumen = self.lumens
+        self.spot.luxcore.lumen = self.lumens
 
 
 
@@ -222,8 +223,8 @@ class LuxcoreProjector(ObjectTemplate):
         u_0 = self.resolution[0]/2
         v_0 = self.resolution[1]/2
         K = np.array([
-            [focal/self.pixel_size_mm,    0.0, u_0],
-            [      0, focal/self.pixel_size_mm, v_0],
+            [focal/self.px_size_mm,    0.0, u_0],
+            [      0, focal/self.px_size_mm, v_0],
             [      0,       0,   1]
         ])
         return K
@@ -234,7 +235,6 @@ class LuxcoreProjector(ObjectTemplate):
             image = oabl.numpy_img_to_blender_img(image) # convert to blender image
         else:
             self.projection_image = oabl.blender_img_to_numpy_img(image)
-            
         self.spot.luxcore.image = image
 
     def set_lumens(self, lumens):
@@ -256,7 +256,7 @@ class LuxcoreProjector(ObjectTemplate):
 
 
 class LuxcoreLaser(LuxcoreProjector):
-    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), lumens=0, resolution=(1920,1080), half_line_width_px=1, laser_color=(255,0,0), focal_length=36, px_size_mm=10e-3):
+    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), lumens=20, resolution=(1920,1080), half_line_width_px=1, laser_color=(255,0,0), focal_length=36, px_size_mm=10e-3):
         super().__init__(name, location=location, orientation=orientation, lumens=lumens, normalize_color_luminance=True, resolution=resolution, focal_length=focal_length, px_size_mm=px_size_mm)
         laser_img = oals.create_laser_scan_line(laser_color, half_line_width_px, resolution[0], resolution[1])
         self.set_projector_image(laser_img)
@@ -265,8 +265,8 @@ class LuxcoreLaser(LuxcoreProjector):
         laser_img = oals.create_laser_scan_line(laser_color, half_line_width_px, image_res_x, image_res_y)
         self.set_projector_image(laser_img)
     
-    def set_laser_image_periodical(self, colors_list, half_line_width, step, image_res_x, image_res_y):
-        laser_img = oals.create_laser_scan_line_periodical_color(colors_list, half_line_width, step, image_res_x, image_res_y)
+    def set_laser_image_periodical(self, colors_list, step, line_width=1):
+        laser_img = oals.create_laser_scan_line_periodical_color(colors_list, step, self.resolution[0], self.resolution[1], 1)
         self.set_projector_image(laser_img)
 
 
@@ -275,6 +275,7 @@ class Camera(ObjectTemplate):
         self.name = name
         self.resolution = resolution
         self.pixel_size_mm = pixel_size_mm
+        self.focal_length = focal_length
         cam = bpy.data.cameras.new(name)
         self.camera = bpy.data.objects.new(name, cam)
         super().__init__(self.camera)
@@ -307,20 +308,13 @@ class Camera(ObjectTemplate):
 
 
     def get_camera_matrix(self):
-        #scene = bpy.context.scene
-        #scale = scene.render.resolution_percentage / 100
         width = self.resolution[0] #* scale # px
         height = self.resolution[1]# * scale # px
-        camdata = self.camera.data
-        focal = camdata.lens # mm
-        sensor_width = camdata.sensor_width # mm
-        sensor_height = camdata.sensor_height # mm
         u_0 = width / 2
         v_0 = height / 2
-        #skew = 0 # only use rectangular pixels
         K = np.array([
-            [focal/self.pixel_size_mm,    0.0, u_0],
-            [      0, focal/self.pixel_size_mm, v_0],
+            [self.focal_length/self.pixel_size_mm,    0.0, u_0],
+            [      0, self.focal_length/self.pixel_size_mm, v_0],
             [      0,       0,   1]
         ])
         return K
@@ -418,19 +412,11 @@ class StereoTemplate(ObjectTemplate):
         left_img = self.__left_optical.get_image()
         right_img = self.__right_optical.get_image()
         left_img_size = left_img.shape[0:2][::-1]
-        print("Left img size")
-        print(left_img_size)
-        print("type")
-        print(type(left_img_size))
         right_img_size = right_img.shape[0:2][::-1]
         left_K = self.__left_optical.get_camera_matrix()
         right_K = self.__right_optical.get_camera_matrix()
         transl_RL_R = self.get_translation_right_to_left_optical(return_numpy=True)
-        print("transl_RL_R")
-        print(transl_RL_R)
         rot_RL = self.get_rotation_right_to_left_optical(return_numpy=True)
-        print("rot_RL")
-        print(rot_RL)
         distCoeffs = None
 
         R1,R2,P1,P2,Q,_,_ = cv2.stereoRectify(left_K, distCoeffs, right_K, distCoeffs, left_img_size, rot_RL, transl_RL_R, alpha=crop_parameter)
@@ -486,18 +472,22 @@ class StereoCamera(StereoTemplate):
 
 
 class LuxcoreLaserScanner(StereoTemplate):
-    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), intra_axial_dist=0.2, angle=math.pi/20, lumens=20, camera_resolution=(1920,1080),cam_left=True):
+    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), intra_axial_dist=0.2, angle=math.pi/20, lumens=20, camera_resolution=(1920,1080),laser_resolution=(1920,1080), cam_left=True):
         self.camera = Camera(name + "_camera", resolution=camera_resolution)
-        self.laser = LuxcoreLaser(name + "_laser", lumens=lumens)
+        self.laser = LuxcoreLaser(name + "_laser", lumens=lumens, resolution=laser_resolution)
         if cam_left:
             super().__init__(name, self.camera, self.laser, location, orientation, intra_axial_dist, angle)
         else:
             super().__init__(name, self.laser, self.camera, location, orientation, intra_axial_dist, angle)
-    
-    def get_filtered_scan(self):
-        pass
 
-
+    def get_filtered_scan(self, treshold=0):
+        self.laser.turn_on_projector()
+        image_with_projection = self.camera.get_image()
+        self.laser.turn_off_projector()
+        print(self.laser.light_object.data.luxcore.lumen)
+        image_without_projection = self.camera.get_image()
+        filtered_image = filter_images(image_with_projection, image_without_projection, treshold)
+        return filtered_image
 
 class LuxcoreStructuredLightScanner(StereoTemplate):
     def __init__(self, name, location=(0,0,0), orientation=(0,0,0), intra_axial_dist=0.2, angle=math.pi/20, lumens=1000, cam_res=(1920,1080), proj_res=(1920, 1080), cam_left=True):
