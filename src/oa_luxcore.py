@@ -11,6 +11,7 @@ import copy
 import mathutils
 import cv2
 from oa_stereo_utils import *
+import matplotlib.pyplot as plt
 
 
 def luxcore_setup(render_time=60):
@@ -305,6 +306,13 @@ class Camera(ObjectTemplate):
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         return img
 
+    def show_image(self):
+        img = self.get_image()
+        plt.imshow(img)
+        plt.show()
+
+        
+
 
 
     def get_camera_matrix(self):
@@ -472,8 +480,8 @@ class StereoCamera(StereoTemplate):
 
 
 class LuxcoreLaserScanner(StereoTemplate):
-    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), intra_axial_dist=0.2, angle=math.pi/20, lumens=20, camera_resolution=(1920,1080),laser_resolution=(1920,1080), cam_left=True):
-        self.camera = Camera(name + "_camera", resolution=camera_resolution)
+    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), intra_axial_dist=0.2, angle=math.pi/20, lumens=20, camera_resolution=(1920,1080),camera_pixel_size = 10e-3, laser_resolution=(1920,1080), cam_left=True):
+        self.camera = Camera(name + "_camera", resolution=camera_resolution, pixel_size_mm=camera_pixel_size)
         self.laser = LuxcoreLaser(name + "_laser", lumens=lumens, resolution=laser_resolution)
         if cam_left:
             super().__init__(name, self.camera, self.laser, location, orientation, intra_axial_dist, angle)
