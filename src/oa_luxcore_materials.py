@@ -1,5 +1,7 @@
 import bpy
 from oa_blender import numpy_img_to_blender_img
+from oa_file_utils import *
+
 
 def assign_material(object, material):
 
@@ -38,6 +40,66 @@ def assign_material(object, material):
         object.material_slots[obj.active_material_index].material = mat
     else:
         object.data.materials.append(mat)
+
+
+def assign_pbr_material(object, pbr_dir_path):
+    material_name = os.path.basename(pbr_dir_path)
+    
+    color_img_path = search_substring_from_folder(pbr_dir_path, "Color")
+    metalness_img_path = search_substring_from_folder(pbr_dir_path, "Metalness")
+    normal_img_path = search_substring_from_folder(pbr_dir_path, "Normal")
+    roughness_img_path = search_substring_from_folder(pbr_dir_path, "Roughness")
+    
+    mat = bpy.data.materials.new(name=material_name)
+    tree_name = "Nodes_" + mat.name
+    node_tree = bpy.data.node_groups.new(name=tree_name, type="luxcore_material_nodes")
+    mat.luxcore.node_tree = node_tree
+    node_tree.use_fake_user = True
+
+    nodes = node_tree.nodes
+    output_node = nodes.new("LuxCoreNodeMatOutput")
+    output_node.location = 500, 200
+    output_node.select = False
+    mat_node = nodes.new("LuxCoreNodeMatDisney")
+    mat_node.location = 250, 200
+    node_tree.links.new(mat_node.outputs[0], output_node.inputs[0])
+    
+    color_img_text_node = nodes.new("LuxCoreNodeTexImagemap")
+    color_img_text_node.location = 0,700
+    color_img_text_node.image = bpy.data.images.load(color_img_path)
+    color_img_text_node.projection = 'box'
+    node_tree.links.new(color_img_text_node.outputs[0], mat_node.inputs[0])
+    
+    metalness_img_text_node = nodes.new("LuxCoreNodeTexImagemap")
+    metalness_img_text_node.location = -300, 400
+    metalness_img_text_node.image = bpy.data.images.load(metalness_img_path)
+    metalness_img_text_node.projection = 'box'
+    metalness_img_text_node.gamma = 1
+    node_tree.links.new(metalness_img_text_node.outputs[0], mat_node.inputs[2])
+    
+    roughness_img_text_node = nodes.new("LuxCoreNodeTexImagemap")
+    roughness_img_text_node.location = 0, 100
+    roughness_img_text_node.image = bpy.data.images.load(roughness_img_path)
+    roughness_img_text_node.projection = 'box'
+    roughness_img_text_node.gamma = 1
+    node_tree.links.new(roughness_img_text_node.outputs[0], mat_node.inputs[5])
+    
+    normal_img_text_node = nodes.new("LuxCoreNodeTexImagemap")
+    normal_img_text_node.location = -300, -300
+    normal_img_text_node.image = bpy.data.images.load(normal_img_path)
+    normal_img_text_node.projection = 'box'
+    normal_img_text_node.gamma = 1
+    node_tree.links.new(normal_img_text_node.outputs[0], mat_node.inputs[15])
+    normal_img_text_node.is_normal_map = True
+    
+
+    ###############################################################
+
+    if object.material_slots:
+        object.material_slots[obj.active_material_index].material = mat
+    else:
+        object.data.materials.append(mat)
+
 
 def assign_texture_material(object, image, mat_name="Image Texture", numpy_image=True):
     if numpy_image:
