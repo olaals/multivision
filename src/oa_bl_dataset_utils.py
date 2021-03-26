@@ -1,7 +1,9 @@
+import math
 import os, random
 import bpy
 import cv2
 import numpy as np
+import glob
 
 def import_random_stl(dir_path, dimensions=(1,1,1)):
     random_stl = random.choice(os.listdir(dir_path))
@@ -24,6 +26,28 @@ def import_stl(path):
     #print(f"Splitext: {bl_obj_name}")
     bl_obj = bpy.data.objects[bl_obj_name]
     return bl_obj
+
+def set_hdri_luxcore(hdri_path):
+    bpy.context.scene.world.luxcore.light = 'infinite'
+    bpy.context.scene.world.luxcore.image = bpy.data.images.load(hdri_path)
+    bpy.context.scene.world.luxcore.sampleupperhemisphereonly = True
+
+
+def set_random_hdri_luxcore(hdri_dir_path):
+    hdri_paths = glob.glob(hdri_dir_path + "/*.hdr")
+    hdri_path = random.choice(hdri_paths)
+    set_hdri_luxcore(hdri_path)
+    world_rot = random.uniform(0, 2*math.pi)
+    bpy.context.scene.world.luxcore.rotation = world_rot
+    brightness_gain_exp = random.uniform(-1.0, 1.0)
+    brightness_gain = 2 ** brightness_gain_exp
+    bpy.context.scene.world.luxcore.gain = brightness_gain
+
+
+
+
+
+
 
 def row_wise_mean_index(img):
     try:
