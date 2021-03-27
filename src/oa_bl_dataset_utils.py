@@ -4,6 +4,8 @@ import bpy
 import cv2
 import numpy as np
 import glob
+from oa_luxcore_materials import assign_pbr_material
+from oa_file_utils import path_to_random_file
 
 def import_random_stl(dir_path, dimensions=(1,1,1)):
     random_stl = random.choice(os.listdir(dir_path))
@@ -43,7 +45,9 @@ def set_random_hdri_luxcore(hdri_dir_path):
     brightness_gain = 2 ** brightness_gain_exp
     bpy.context.scene.world.luxcore.gain = brightness_gain
 
-
+def set_random_pbr(bl_object, pbr_dir_path):
+    pbr_path = path_to_random_file(pbr_dir_path)
+    assign_pbr_material(bl_object, pbr_path)
 
 
 
