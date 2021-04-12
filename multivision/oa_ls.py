@@ -1,13 +1,26 @@
+from skimage.util import random_noise
 import cv2
 import numpy as np
 from itertools import chain, repeat, cycle, islice
 
-def create_laser_scan_line(color, half_line_width, image_width, image_height):
+def create_laser_scan_line(color, line_width, image_width, image_height):
     assert(len(color)==3)
+    half_line_width_left = np.round(line_width/2)
+    half_line_width_right = np.round(line_width/1.9)
     img = np.zeros((image_height, image_width, 3))
-    img[:, int(image_width/2-half_line_width):int(image_width/2+half_line_width), :] = color
+    img[:, int(image_width/2-half_line_width_left):int(image_width/2+half_line_width_right)] = color
     return img
 
+def create_laser_scan_line_speckle(color, line_width, image_width, image_height, gaussian_kernel_width=None):
+    if gaussian_kernel_width is None:
+        gaussian_kernel_width = (line_width%2)+line_width+1
+    
+
+    laser_img = create_laser_scan_line(color, line_width, image_width, image_height)
+    laser_img_blur = cv2.GaussianBlur(laser_img, (gaussian_kernel_width, gaussian_kernel_width),0)
+    laser_img_blur /=255.0
+    laser_img_speckle = random_noise(laser_img_blur, mode='speckle', seed=None, clip=True)
+    return np.uint8(laser_img_speckle*255.0)
 
 def create_laser_scan_line_periodical_color(colors_list,  step, image_width, image_height, line_width=1):
     #assert(line_width%2 == image_width%2)

@@ -58,6 +58,7 @@ class ObjectTemplate:
 
     def set_location(self, location):
         self.__object.location = location
+        bpy.context.view_layer.update()
 
     def get_location(self):
         return self.__object.location
@@ -75,12 +76,20 @@ class ObjectTemplate:
         return self.__object.parent
     
     def look_at(self, look_at_point):
+        print(type(self.__object))
+        print("look at")
+
         location = self.__object.matrix_world.to_translation()
         look_at_point = mathutils.Matrix.Translation(look_at_point).to_translation()
         print(look_at_point)
         direction = look_at_point - location
+        print("current location")
+        print(location)
+        print("direction")
+        print(direction)
         rot_quat = direction.to_track_quat('-Z', 'Y')
         self.__object.rotation_euler = rot_quat.to_euler()
+        print("")
 
 class CyclesProjector(ObjectTemplate):
     def __init__(self, name="CyclesProj", location=(0,0,0), orientation=(0,0,0), resolution = (1920,1080), focal_length=36, px_size_mm=10e-3, light_strength=1000):
@@ -262,8 +271,11 @@ class LuxcoreLaser(LuxcoreProjector):
         laser_img = oals.create_laser_scan_line(laser_color, half_line_width_px, resolution[0], resolution[1])
         self.set_projector_image(laser_img)
 
-    def set_laser_image(self, laser_color, half_line_width_px, image_res_x, image_res_y):
-        laser_img = oals.create_laser_scan_line(laser_color, half_line_width_px, image_res_x, image_res_y)
+    def set_laser_image(self, laser_color, line_width_px, image_res_x=None, image_res_y=None):
+        image_res_x = image_res_x if image_res_x else self.resolution[0]
+        image_res_y = image_res_y if image_res_y else self.resolution[1]
+
+        laser_img = oals.create_laser_scan_line_speckle(laser_color, line_width_px, image_res_x, image_res_y)
         self.set_projector_image(laser_img)
     
     def set_laser_image_periodical(self, colors_list, step, line_width=1):
@@ -487,6 +499,7 @@ class LuxcoreLaserScanner(StereoTemplate):
             super().__init__(name, self.camera, self.laser, location, orientation, intra_axial_dist, angle)
         else:
             super().__init__(name, self.laser, self.camera, location, orientation, intra_axial_dist, angle)
+        bpy.context.view_layer.update()
 
     def get_filtered_scan(self, treshold=0):
         self.laser.turn_on_projector()
@@ -519,6 +532,7 @@ class LuxcoreStructuredLightScanner(StereoTemplate):
         projector_res = self.projector.get_resolution()
         rainbow_pattern = oasli.create_rainbow_pattern_img(pattern_number, projector_res[0], projector_res[1])
         self.projector.set_projector_image(rainbow_pattern)
+        
         
         
     
