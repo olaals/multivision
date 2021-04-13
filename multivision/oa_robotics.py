@@ -44,32 +44,47 @@ def rotz(rad):
     #R = np.round(R,10)
     return R
 
-def makeTrans(R,t):
-    T = np.zeros((4,4))
-    T[3,3] = 1.0
-    T[0:3, 0:3] = R
-    T[0:3, 3] = t
-    return T
+def make_transf(rot, transl):
+    transl = np.squeeze(transl)
+    transf = np.zeros((4,4), dtype=np.float32)
+    transf[0:3,0:3] = rot
+    transf[3,3] = 1.0
+    transf[0:3,3] = transl
+    return transf
 
-def invertTrans(T):
+
+
+
+def invert_transf(T):
     R = T[0:3, 0:3]
     t = T[0:3, 3]
     R_inv = R.transpose()
     t_inv = -R_inv@t
-    T_inv = np.zeros((4,4))
+    T_inv = np.zeros((4,4), dtype=np.float32)
     T_inv[0:3,0:3] = R_inv
     T_inv[0:3, 3] = t_inv
     T_inv[3,3] = 1.0
     return T_inv
 
-def homgLineFrom2Points(p1, p2):
+def decompose_transf_mat(transf):
+    assert(transf.shape == (4,4) and transf[3,3] == 1.0)
+    transl = transf[0:3, 3]
+    rot = transf[0:3, 0:3]
+    return rot, transl
 
+def decompose_homg_coord(homg_coord):
+    return homg_coord[0:3], homg_coord[3]
+
+def normalize_homg_coord(homg_coord):
+    assert(len(homg_coord) == 4)
+    norm_homg_coord = homg_coord/homg_coord[3]
+    return norm_homg_coord
+
+
+def homg_line_from_2_points(p1, p2):
     l = p1[3]*p2[0:3] - p2[3]*p1[0:3]
     l_dash = np.cross(p1[0:3], p2[0:3])
-
     homg_line = np.concatenate((l,l_dash))
-    print(homg_line)
-
     return homg_line
     
 def homgPlaneFrom3Points(p1, p2, p3):
@@ -78,6 +93,28 @@ def homgPlaneFrom3Points(p1, p2, p3):
     d = np.array([d])
     homg_plane = np.concatenate((n,d))
     return homg_plane
+
+def plucker_plane_from_transf_mat(transf, plane):
+    plane = ''.join(sorted(plane))
+    transl = transf[0:3, 3]
+    assert(plane == 'xy' or plane =='xz' or plane == 'yz')
+    if plane == 'xy':
+        normal = transf[0:3,2]
+        dist = -np.dot(normal, transl)
+        pass
+    elif plane == 'xz':
+        normal = transf[0:3,1]
+        dist = -np.dot(normal, transl)
+        pass
+    elif plane == 'yz':
+        normal = transf[0:3,0]
+        dist = -np.dot(normal, transl)
+    u = np.zeros((4,1))
+    u[0:3] = np.expand_dims(normal/dist,1)
+    u[3] = 1.0
+    print(u)
+    return u
+
 
 def skew(v):
     if len(v) == 4: v = v[:3]/v[3]
@@ -207,4 +244,7 @@ def matrixLog3AngAx(R):
     R_log = MatrixLog3(R)
     angAx = so3ToVec(R_log)
     return angAx
+
+if __name__ == '__main__':
+    pass
 
