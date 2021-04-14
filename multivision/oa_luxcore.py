@@ -542,6 +542,7 @@ class TricopicTemplate(ObjectTemplate):
         cube_dim = max(intra_axial_dists)*2
         self.cube = oams.add_cuboid(name, (cube_dim, cube_dim/2, cube_dim/2), (0,0,cube_dim/4))
         super().__init__(self.cube)
+
         self.__middle_optical = middle_optical
         self.__middle_optical.set_location((0,0,0))
         self.__middle_optical.set_rotation((0,0,0))
@@ -556,6 +557,8 @@ class TricopicTemplate(ObjectTemplate):
         self.__right_optical.set_location((intra_axial_dists[1],0,0))
         self.__right_optical.set_rotation((0, angles[1], 0))
         self.__right_optical.set_parent(self.cube)
+
+        self.__opticals = {'l': self.__left_optical, 'm': self.__middle_optical, 'r': self.__right_optical}
 
         self.cube.location = location
         self.cube.rotation_euler = orientation
@@ -589,62 +592,35 @@ class TricopicTemplate(ObjectTemplate):
     
     def get_rotation(self, from_to="l->r", mode="matrix", return_numpy=False):
         from_to.replace(" ", "")
-        if from_to == "l->r":
-            rot_BL = self.__left_optical.axis.get_rotation_parent().to_matrix()
-            rot_BR = self.__right_optical.axis.get_rotation_parent().to_matrix()
-            rot_LB = rot_BL.transposed()
-            rot_LR = rot_LB@rot_BR
-            rot = rot_LR
+        from_opt_letter = from_to[0]
+        to_opt_letter = from_to[-1]
+        assert(from_opt_letter != to_opt_letter)
+        assert(from_opt_letter in self.__opticals)
+        assert(to_opt_letter in self.__opticals)
+        from_opt = self.__opticals[from_opt_letter]
+        to_opt = self.__opticals[to_opt_letter]
 
-        elif from_to == "l->m":
-            rot_BM = self.__middle_optical.axis.get_rotation_parent().to_matrix()
-            rot_BL = self.__left_optical.axis.get_rotation_parent().to_matrix()
-            rot_MB = rot_BM.transposed()
-            rot_ML = rot_MB@rot_BL
-            rot = rot_ML
-
-        elif from_to == "r->l":
-            rot_BR = self.__right_optical.axis.get_rotation_parent().to_matrix()
-            rot_BL = self.__left_optical.axis.get_rotation_parent().to_matrix()
-            rot_RB = rot_BR.transposed()
-            rot_RL = rot_RB@rot_BL
-            rot = rot_RL
-
-        elif from_to == "r->m":
-            rot_BR = self.__right_optical.axis.get_rotation_parent().to_matrix()
-            rot_BM = self.__middle_optical.axis.get_rotation_parent().to_matrix()
-            rot_RB = rot_BR.transposed()
-            rot_RM = rot_RB@rot_BM
-            rot = rot_RM
-        
-        elif from_to == "m->l":
-            rot_BM = self.__middle_optical.axis.get_rotation_parent().to_matrix()
-            rot_BL = self.__left_optical.axis.get_rotation_parent().to_matrix()
-            rot_MB = rot_BM.transposed()
-            rot_ML = rot_MB@rot_BL
-            rot = rot_ML
-
-        elif from_to == "m->r":
-            rot_BM = self.__middle_optical.axis.get_rotation_parent().to_matrix()
-            rot_BR = self.__right_optical.axis.get_rotation_parent().to_matrix()
-            rot_MB = rot_BM.transposed()
-            rot_MR = rot_MB@rot_BR
-            rot = rot_ML
-        else:
-            assert("from_to argument is invalid")
+        rot_BF = from_opt.axis.get_rotation_parent().to_matrix()
+        rot_BT = to_opt.axis.get_rotation_parent().to_matrix()
+        rot_FB = rot_BF.transposed()
+        rot_FT = rot_FB@rot_BT
+        rot = rot_FT
 
         if mode=="matrix":
             if return_numpy:
                 return np.array(rot)
             else:
                 return rot
-        
         elif mode=="euler":
-            return rot.to_euler('XYZ')
-        
+            if return_numpy:
+                return np.array(rot.to_euler('XYZ'))
+            else:
+                return rot.to_euler('XYZ')
         elif mode=="quaternion":
-            return rot.to_quaternion()
-        
+            if return_numpy:
+                return np.array(rot.to_quaternion())
+            else:
+                return rot.to_quaternion()
         else:
             raise Exception("get_rotation_cam_to_light_source: No mode for " + mode)
             return
@@ -652,40 +628,38 @@ class TricopicTemplate(ObjectTemplate):
 
     def get_translation(self, from_to="l->r", return_numpy=False):
         from_to.replace(" ", "")
-        if from_to == "l->r":
-            raise NotImplementedError
 
-        elif from_to == "l->m":
-            raise NotImplementedError
-
-        elif from_to == "r->l":
-            raise NotImplementedError
-
-        elif from_to == "r->m":
-            raise NotImplementedError
-        
-        elif from_to == "m->l":
-            raise NotImplementedError
-
-        elif from_to == "m->r":
-            raise NotImplementedError
-        else:
-            assert("from_to argument is invalid")
-
-                
+        from_opt_letter = from_to[0]
+        to_opt_letter = from_to[-1]
+        assert(from_opt_letter != to_opt_letter)
+        assert(from_opt_letter in self.__opticals)
+        assert(to_opt_letter in self.__opticals)
+        from_opt = self.__opticals[from_opt_letter]
+        to_opt = self.__opticals[to_opt_letter]
 
 
-        transl_BR_B = self.__right_optical.get_location()
-        transl_BL_B = self.__left_optical.get_location()
-        rot_BR = self.__right_optical.axis.get_rotation_parent().to_matrix()
-        rot_RB = rot_BR.transposed()
-        transl_RL_B = transl_BL_B - transl_BR_B
-        transl_RL_R = rot_RB@transl_RL_B
+        transl_BF_B = from_opt.get_location()
+        transl_BT_B = to_opt.get_location()
+        rot_BF = from_opt.axis.get_rotation_parent().to_matrix()
+        rot_FB = rot_BF.transposed()
+        transl_FT_B = transl_BT_B - transl_BF_B
+        transl_FT_F = rot_FB@transl_FT_B
 
         if return_numpy:
-            return np.array(transl_RL_R)
+            return np.array(transl_FT_F)
         else:
-            return transl_RL_R
+            return transl_FT_F
+
+    def get_transformation(self, from_to="l->r", return_numpy=False):
+        transl = self.get_translation(from_to)
+        rot = self.get_rotation(from_to, mode="matrix")
+        transf = mathutils.Matrix.Translation(transl) @ rot.to_4x4()
+        if return_numpy:
+            return np.array(transf)
+        else:
+            return transf
+
+
 
     def get_rectified_image_pair(self, between="l,r", crop_parameter=0.5):
         left_img = self.__left_optical.get_image()
