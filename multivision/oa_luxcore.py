@@ -12,6 +12,7 @@ import mathutils
 import cv2
 from oa_stereo_utils import *
 import matplotlib.pyplot as plt
+from oa_pointcloud_utils import *
 
 
 def luxcore_setup(render_time=60):
@@ -312,10 +313,13 @@ class Camera(ObjectTemplate):
             scene.render.filepath = os.path.join(os.getcwd(), directory, filename)
         bpy.ops.render.render(write_still=True)
     
-    def get_image(self):
+    def get_image(self, grayscale=False):
         self.render("latest_render.png")
-        img = cv2.imread("latest_render.png")
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        if grayscale:
+            img = cv2.imread("latest_render.png", 0)
+        else:
+            img = cv2.imread("latest_render.png")
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         return img
 
     def show_image(self):
@@ -687,6 +691,46 @@ class LuxcoreStereoLaserScanner(TricopicTemplate):
         self.camera_right = Camera(name + "_camera", resolution=resolutions[1])
         self.laser = LuxcoreLaser(name + "_laser", lumens=lumens)
         super().__init__(name, self.camera_left, self.laser, self.camera_right, location, orientation, intra_axial_dists, angles)
+
+    def get_projected_view_img(self, threshold=100, right_to_left=True):
+        if right_to_left:
+            cam_img_right = self.camera_right.get_image(grayscale=True)
+            cam_mat_right = self.camera_right.get_camera_matrix()
+            T_camR_laser = self.get_transformation(from_to="r->m", return_numpy=True)
+            points_frame_camR = scan_image_to_pointcloud(cam_img_right, T_camR_laser, cam_mat_right, threshold)
+            T_camL_camR = self.get_transformation(from_to="l->r", return_numpy=True)
+            points_frame_camL = change_frame_of_pointcloud(points_frame_camR, T_camL_camR)
+            cam_mat_left = self.camera_left.get_camera_matrix()
+            cam_img_projected = pointcloud_to_image(points_frame_camL, cam_mat_left)
+            return cam_img_projected
+
+        else:
+            raise NotImplementedError
+
+    def overlap_views(self, threshold=100, left_view=True):
+        if left_view:
+            projected = self.get_projected_view_img(threshold)
+            left_view = self.camera_left.get_image(grayscale=True)
+            left_view[left_view<=threshold] = 0
+            black = np.zeros(left_view.shape, dtype=np.uint8)
+            mask = np.logical_and(left_view>0, projected>0)
+            not_mask = np.logical_not(mask)
+            green = np.maximum(left_view, projected)
+            green.astype(np.uint8)
+            green[not_mask] = 0
+
+
+            overlapped = np.dstack((left_view, green, projected))
+            return overlapped
+            
+
+        else:
+            raise NotImplementedError
+
+
+
+
+
 
 
 
