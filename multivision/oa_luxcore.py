@@ -536,5 +536,183 @@ class LuxcoreStructuredLightScanner(StereoTemplate):
         
         
     
+class TricopicTemplate(ObjectTemplate):
+    def __init__(self, name, left_optical, middle_optical, right_optical, location=(0,0,0), orientation=(0,0,0), intra_axial_dists=[0.2,0.2], angles = [math.pi/20, math.pi/20]):
+        self.name = name
+        cube_dim = max(intra_axial_dists)*2
+        self.cube = oams.add_cuboid(name, (cube_dim, cube_dim/2, cube_dim/2), (0,0,cube_dim/4))
+        super().__init__(self.cube)
+        self.__middle_optical = middle_optical
+        self.__middle_optical.set_location((0,0,0))
+        self.__middle_optical.set_rotation((0,0,0))
+        self.__middle_optical.set_parent(self.cube)
+
+        self.__left_optical = left_optical
+        self.__left_optical.set_location((-intra_axial_dists[0],0,0))
+        self.__left_optical.set_rotation((0, -angles[0],0))
+        self.__left_optical.set_parent(self.cube)
+
+        self.__right_optical = right_optical
+        self.__right_optical.set_location((intra_axial_dists[1],0,0))
+        self.__right_optical.set_rotation((0, angles[1], 0))
+        self.__right_optical.set_parent(self.cube)
+
+        self.cube.location = location
+        self.cube.rotation_euler = orientation
+        
+    def get_essential_matrix(self, from_to="l->r"):
+        from_to.replace(" ", "")
+        if from_to == "l->r":
+            raise NotImplementedError
+
+        elif from_to == "l->m":
+            raise NotImplementedError
+
+        elif from_to == "r->l":
+            raise NotImplementedError
+
+        elif from_to == "r->m":
+            raise NotImplementedError
+        
+        elif from_to == "m->l":
+            raise NotImplementedError
+
+        elif from_to == "m->r":
+            raise NotImplementedError
+        else:
+            assert("from_to argument is invalid")
+        transl_RL_R = self.get_translation_right_to_left_optical()
+        rot_RL = self.get_rotation_right_to_left_optical()
+        rot_RL = np.array(rot_RL)
+        essential_matrix = rot_RL@oarb.vec_to_so3(transl_RL_R)
+        return essential_matrix
+    
+    def get_rotation(self, from_to="l->r", mode="matrix", return_numpy=False):
+        from_to.replace(" ", "")
+        if from_to == "l->r":
+            rot_BL = self.__left_optical.axis.get_rotation_parent().to_matrix()
+            rot_BR = self.__right_optical.axis.get_rotation_parent().to_matrix()
+            rot_LB = rot_BL.transposed()
+            rot_LR = rot_LB@rot_BR
+            rot = rot_LR
+
+        elif from_to == "l->m":
+            rot_BM = self.__middle_optical.axis.get_rotation_parent().to_matrix()
+            rot_BL = self.__left_optical.axis.get_rotation_parent().to_matrix()
+            rot_MB = rot_BM.transposed()
+            rot_ML = rot_MB@rot_BL
+            rot = rot_ML
+
+        elif from_to == "r->l":
+            rot_BR = self.__right_optical.axis.get_rotation_parent().to_matrix()
+            rot_BL = self.__left_optical.axis.get_rotation_parent().to_matrix()
+            rot_RB = rot_BR.transposed()
+            rot_RL = rot_RB@rot_BL
+            rot = rot_RL
+
+        elif from_to == "r->m":
+            rot_BR = self.__right_optical.axis.get_rotation_parent().to_matrix()
+            rot_BM = self.__middle_optical.axis.get_rotation_parent().to_matrix()
+            rot_RB = rot_BR.transposed()
+            rot_RM = rot_RB@rot_BM
+            rot = rot_RM
+        
+        elif from_to == "m->l":
+            rot_BM = self.__middle_optical.axis.get_rotation_parent().to_matrix()
+            rot_BL = self.__left_optical.axis.get_rotation_parent().to_matrix()
+            rot_MB = rot_BM.transposed()
+            rot_ML = rot_MB@rot_BL
+            rot = rot_ML
+
+        elif from_to == "m->r":
+            rot_BM = self.__middle_optical.axis.get_rotation_parent().to_matrix()
+            rot_BR = self.__right_optical.axis.get_rotation_parent().to_matrix()
+            rot_MB = rot_BM.transposed()
+            rot_MR = rot_MB@rot_BR
+            rot = rot_ML
+        else:
+            assert("from_to argument is invalid")
+
+        if mode=="matrix":
+            if return_numpy:
+                return np.array(rot)
+            else:
+                return rot
+        
+        elif mode=="euler":
+            return rot.to_euler('XYZ')
+        
+        elif mode=="quaternion":
+            return rot.to_quaternion()
+        
+        else:
+            raise Exception("get_rotation_cam_to_light_source: No mode for " + mode)
+            return
+
+
+    def get_translation(self, from_to="l->r", return_numpy=False):
+        from_to.replace(" ", "")
+        if from_to == "l->r":
+            raise NotImplementedError
+
+        elif from_to == "l->m":
+            raise NotImplementedError
+
+        elif from_to == "r->l":
+            raise NotImplementedError
+
+        elif from_to == "r->m":
+            raise NotImplementedError
+        
+        elif from_to == "m->l":
+            raise NotImplementedError
+
+        elif from_to == "m->r":
+            raise NotImplementedError
+        else:
+            assert("from_to argument is invalid")
+
+                
+
+
+        transl_BR_B = self.__right_optical.get_location()
+        transl_BL_B = self.__left_optical.get_location()
+        rot_BR = self.__right_optical.axis.get_rotation_parent().to_matrix()
+        rot_RB = rot_BR.transposed()
+        transl_RL_B = transl_BL_B - transl_BR_B
+        transl_RL_R = rot_RB@transl_RL_B
+
+        if return_numpy:
+            return np.array(transl_RL_R)
+        else:
+            return transl_RL_R
+
+    def get_rectified_image_pair(self, between="l,r", crop_parameter=0.5):
+        left_img = self.__left_optical.get_image()
+        right_img = self.__right_optical.get_image()
+        left_img_size = left_img.shape[0:2][::-1]
+        right_img_size = right_img.shape[0:2][::-1]
+        left_K = self.__left_optical.get_camera_matrix()
+        right_K = self.__right_optical.get_camera_matrix()
+        transl_RL_R = self.get_translation_right_to_left_optical(return_numpy=True)
+        rot_RL = self.get_rotation_right_to_left_optical(return_numpy=True)
+        distCoeffs = None
+
+        R1,R2,P1,P2,Q,_,_ = cv2.stereoRectify(left_K, distCoeffs, right_K, distCoeffs, left_img_size, rot_RL, transl_RL_R, alpha=crop_parameter)
+        left_maps = cv2.initUndistortRectifyMap(left_K, distCoeffs, R1, P1, left_img_size, cv2.CV_16SC2)
+        right_maps = cv2.initUndistortRectifyMap(right_K, distCoeffs, R2, P2, right_img_size, cv2.CV_16SC2)
+        left_img_remap = cv2.remap(left_img, left_maps[0], left_maps[1], cv2.INTER_LANCZOS4)
+        right_img_remap = cv2.remap(right_img, right_maps[0], right_maps[1], cv2.INTER_LANCZOS4)
+        return left_img_remap, right_img_remap
+        
+        
+
+class LuxcoreStereoLaserScanner(TricopicTemplate):
+    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), intra_axial_dists=[0.2,0.2], angles=[math.pi/20, math.pi/20], lumens=1000, resolutions=[(1920,1080), (1920, 1080)]):
+        self.camera_left = Camera(name + "_camera", resolution=resolutions[0])
+        self.camera_right = Camera(name + "_camera", resolution=resolutions[1])
+        self.laser = LuxcoreLaser(name + "_laser", lumens=lumens)
+        super().__init__(name, self.camera_left, self.laser, self.camera_right, location, orientation, intra_axial_dists, angles)
+
 
 
