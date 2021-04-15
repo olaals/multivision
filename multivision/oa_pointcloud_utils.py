@@ -51,7 +51,46 @@ def pointcloud_to_image(points, cam_mat):
     img[(ys,xs)] = 255
     return img
 
-def pointcloud_to_image2(points, cam_mat):
+def pointcloud_to_image2(points, cam_mat, img_width, img_height):
+    assert(points.shape[0] == 3)
+    assert(cam_mat.shape == (3,3))
+    img = np.zeros((img_height, img_width), dtype='uint8')
+    norm_coords = points/points[2,:]
+    pix_coords = np.round(np.einsum('ij,jk->ik', cam_mat, norm_coords)).astype(np.uint32)
+    xs = pix_coords[0,:]
+    xs[xs>=img_width] = 0
+    xs[xs<0] = 0
+    ys = pix_coords[1,:]
+    ys[ys>=img_height] = 0
+    ys[ys<0] = 0
+    img[(ys,xs)] = 255
+    return img
+
+def pointcloud_to_image3(points, cam_mat, img_width, img_height):
+    assert(points.shape[0] == 3)
+    assert(cam_mat.shape == (3,3))
+    img = np.zeros((img_height*2, img_width*2), dtype='uint8')
+    new_cam_mat = cam_mat
+    new_cam_mat[0,2] = (img_width*2-1.0)/2.0
+    new_cam_mat[1,2] = (img_height*2-1.0)/2.0
+    new_cam_mat[0,0] *= 2.0
+    new_cam_mat[1,1] *= 2.0
+    print("new cam mat")
+    print(new_cam_mat)
+    
+    norm_coords = points/points[2,:]
+    pix_coords = np.round(np.einsum('ij,jk->ik', new_cam_mat, norm_coords)).astype(np.uint32)
+    xs = pix_coords[0,:]
+    xs[xs>=img_width*2] = 0
+    xs[xs<0] = 0
+    ys = pix_coords[1,:]
+    ys[ys>=img_height*2] = 0
+    ys[ys<0] = 0
+    img[(ys,xs)] = 255
+    img = cv2.resize(img, (img_width, img_height))
+    return img
+
+def pointcloud_to_image4(points, cam_mat):
     assert(points.shape[0] == 3)
     assert(cam_mat.shape == (3,3))
     img_width = int(cam_mat[0, 2]*2)

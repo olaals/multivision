@@ -267,9 +267,9 @@ class LuxcoreProjector(ObjectTemplate):
 
 
 class LuxcoreLaser(LuxcoreProjector):
-    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), lumens=20, resolution=(1920,1080), half_line_width_px=1, laser_color=(255,0,0), focal_length=36, px_size_mm=10e-3):
+    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), lumens=20, resolution=(1921,1080), line_width_px=1, laser_color=(255,0,0), focal_length=36, px_size_mm=10e-3):
         super().__init__(name, location=location, orientation=orientation, lumens=lumens, normalize_color_luminance=True, resolution=resolution, focal_length=focal_length, px_size_mm=px_size_mm)
-        laser_img = oals.create_laser_scan_line(laser_color, half_line_width_px, resolution[0], resolution[1])
+        laser_img = oals.create_laser_scan_line(laser_color, line_width_px, resolution[0], resolution[1])
         self.set_projector_image(laser_img)
 
     def set_laser_image(self, laser_color, line_width_px, image_res_x=None, image_res_y=None):
@@ -334,8 +334,8 @@ class Camera(ObjectTemplate):
     def get_camera_matrix(self):
         width = self.resolution[0] #* scale # px
         height = self.resolution[1]# * scale # px
-        u_0 = width / 2
-        v_0 = height / 2
+        u_0 = (width-1) / 2.0
+        v_0 = (height-1) / 2.0
         K = np.array([
             [self.focal_length/self.pixel_size_mm,    0.0, u_0],
             [      0, self.focal_length/self.pixel_size_mm, v_0],
@@ -701,7 +701,7 @@ class LuxcoreStereoLaserScanner(TricopicTemplate):
             T_camL_camR = self.get_transformation(from_to="l->r", return_numpy=True)
             points_frame_camL = change_frame_of_pointcloud(points_frame_camR, T_camL_camR)
             cam_mat_left = self.camera_left.get_camera_matrix()
-            cam_img_projected = pointcloud_to_image(points_frame_camL, cam_mat_left)
+            cam_img_projected = pointcloud_to_image2(points_frame_camL, cam_mat_left, 1920, 1080)
             return cam_img_projected
 
         else:

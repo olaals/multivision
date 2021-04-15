@@ -68,7 +68,7 @@ def invert_transf(T):
 
 def decompose_transf_mat(transf):
     assert(transf.shape == (4,4) and transf[3,3] == 1.0)
-    transl = transf[0:3, 3]
+    transl = np.expand_dims(transf[0:3, 3], 1)
     rot = transf[0:3, 0:3]
     return rot, transl
 
@@ -80,12 +80,30 @@ def normalize_homg_coord(homg_coord):
     norm_homg_coord = homg_coord/homg_coord[3]
     return norm_homg_coord
 
+def homg_to_point(P):
+    return (P/P[3])[0:3]
+
+def point_to_nic(p):
+    return p/p[2]
+
+def plane_to_normal_distance(U):
+    U = U/U[3]
+    distance = np.linalg.norm(U[0:3])
+    normal = -U[0:3]/distance
+    return normal, distance
+
+
 
 def homg_line_from_2_points(p1, p2):
     l = p1[3]*p2[0:3] - p2[3]*p1[0:3]
     l_dash = np.cross(p1[0:3], p2[0:3])
     homg_line = np.concatenate((l,l_dash))
     return homg_line
+
+def point_to_homg(p):
+    return np.vstack((p,1.0))
+
+
     
 def homgPlaneFrom3Points(p1, p2, p3):
     n = np.cross((p1[0:3]-p3[0:3]), (p2[0:3] - p3[0:3]))
@@ -112,7 +130,6 @@ def plucker_plane_from_transf_mat(transf, plane):
     u = np.zeros((4,1))
     u[0:3] = np.expand_dims(normal/dist,1)
     u[3] = 1.0
-    print(u)
     return u
 
 
@@ -139,6 +156,35 @@ def getRotMatFrom2Vec(a, b):
 """
 
 # this one works
+def cross(a,b):
+    c = np.cross(a.T,b.T).T
+    return c
+
+def decompose_plucker_line(plucker_line):
+    l = plucker_line[0:3]
+    l_dash = plucker_line[3:6]
+    return l, l_dash
+
+
+def triangulate_point_known_plane(s, u):
+    """
+    10.3 from O.Egeland vision note p.119
+    """
+    u, u4 = decompose_homg_coord(u)
+    x = - s / (u4*s.T@u)
+    return x
+
+def intersection_line_plane(plucker_line, plane):
+    """
+    9.18 from O.Egeland vision note p.105
+    """
+    u,u4 = decompose_homg_coord(plane)
+    l, l_dash = decompose_plucker_line(plucker_line)
+    x = -u4*l + cross(u, l_dash)
+    x4 = u.T@l
+    return x/x4
+
+
 def getRotMatFrom2Vec(a, b):
     x = np.cross(a, b) 
     x = x / np.linalg.norm(x)

@@ -42,7 +42,7 @@ def create_laser_scan_line_periodical_color(colors_list,  step, image_width, ima
 
 
 if __name__ == '__main__':
-    img = create_laser_scan_line_periodical_color([(255,0,0), (0,255,0), (0,0,255), (255,255,0), (255,0,255), (0,255,255)], 10, 1, 1000)
+    img = create_laser_scan_line_speckle((0,0,255), 3, 1920, 1080)
     cv2.imshow("sfdf", img)
     cv2.waitKey(0)
     cv2.imwrite("testimg.png", img)
