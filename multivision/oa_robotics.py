@@ -25,6 +25,7 @@ SOFTWARE.
 """
 
 import numpy as np
+import cv2
 
 def testtest():
     print("test successful")
@@ -172,6 +173,7 @@ def triangulate_point_known_plane(s, u):
     """
     u, u4 = decompose_homg_coord(u)
     x = - s / (u4*s.T@u)
+    x = np.expand_dims(x,1)
     return x
 
 def intersection_line_plane(plucker_line, plane):
@@ -285,6 +287,30 @@ def vec_to_so3(vec):
     return np.array([[0,      -vec[2],  vec[1]],
                      [vec[2],       0, -vec[0]],
                      [-vec[1], vec[0],       0]])
+
+
+def get_homography(u_C1, T_C2_C1, K1, K2):
+    K1_inv = np.linalg.inv(K1)
+    points_C1 = np.array([[900,100, 1], [600,900,1], [600,100,1],[900,900,1]]) # choose some pixel coords from cam1
+    points_C2 = []
+
+    for point in points_C1:
+        norm_C1 = K1_inv@point
+        x_C1 = triangulate_point_known_plane(norm_C1, u_C1)
+        X_C1 = point_to_homg(x_C1)
+        X_C2 = T_C2_C1@X_C1
+        x_C2 = homg_to_point(X_C2)
+        norm_C2 = point_to_nic(x_C2) # to normalized image coord
+        pix_C2 = K2@norm_C2
+        points_C2.append(pix_C2)
+
+    points_C1 = points_C1
+    points_C1 = points_C1[:, 0:2]
+    points_C2 =  np.array(points_C2).squeeze()
+    points_C2 = points_C2[:,0:2]
+    homography = cv2.getPerspectiveTransform(points_C1.astype(np.float32), points_C2.astype(np.float32))
+    return homography
+
 
 def matrixLog3AngAx(R):
     R_log = MatrixLog3(R)

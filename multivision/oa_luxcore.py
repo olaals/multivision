@@ -686,46 +686,58 @@ class TricopicTemplate(ObjectTemplate):
         
 
 class LuxcoreStereoLaserScanner(TricopicTemplate):
-    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), intra_axial_dists=[0.2,0.2], angles=[math.pi/20, math.pi/20], lumens=1000, resolutions=[(1920,1080), (1920, 1080)]):
-        self.camera_left = Camera(name + "_camera", resolution=resolutions[0])
-        self.camera_right = Camera(name + "_camera", resolution=resolutions[1])
+    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), intra_axial_dists=[0.2,0.2], angles=[math.pi/20, math.pi/20], lumens=1000, resolutions=[(1920,1080), (1920, 1080)], px_sizes = [10e-3, 10e-3]):
+        self.camera_left = Camera(name + "_camera", resolution=resolutions[0], pixel_size_mm=px_sizes[0])
+        self.camera_right = Camera(name + "_camera", resolution=resolutions[1], pixel_size_mm=px_sizes[1])
         self.laser = LuxcoreLaser(name + "_laser", lumens=lumens)
         super().__init__(name, self.camera_left, self.laser, self.camera_right, location, orientation, intra_axial_dists, angles)
+
+    def get_planar_homography(self, right_to_left=True):
+        if right_to_left:
+            K1 = self.camera_left.get_camera_matrix()
+            K2 = self.camera_right.get_camera_matrix()
+            T_C1_C2 = self.get_transformation("l->r", True)
+            T_C2_CL = self.get_transformation("r->m", True)
+            u_C2 = plucker_plane_from_transf_mat(T_C2_CL, 'yz')
+            homg = get_homography(u_C2, T_C1_C2, K2, K1)
+        else:
+            K1 = self.camera_left.get_camera_matrix()
+            K2 = self.camera_right.get_camera_matrix()
+            T_C2_C1 = self.get_transformation("r->l", True)
+            T_C1_CL = self.get_transformation("l->m", True)
+            u_C1 = plucker_plane_from_transf_mat(T_C1_CL, 'yz')
+            homg = get_homography(u_C1, T_C2_C1, K1, K2)
+        return homg
+
+
+
+
 
     def get_projected_view_img(self, threshold=100, right_to_left=True):
         if right_to_left:
             cam_img_right = self.camera_right.get_image(grayscale=True)
-            cam_mat_right = self.camera_right.get_camera_matrix()
-            T_camR_laser = self.get_transformation(from_to="r->m", return_numpy=True)
-            points_frame_camR = scan_image_to_pointcloud(cam_img_right, T_camR_laser, cam_mat_right, threshold)
-            T_camL_camR = self.get_transformation(from_to="l->r", return_numpy=True)
-            points_frame_camL = change_frame_of_pointcloud(points_frame_camR, T_camL_camR)
-            cam_mat_left = self.camera_left.get_camera_matrix()
-            cam_img_projected = pointcloud_to_image2(points_frame_camL, cam_mat_left, 1920, 1080)
-            return cam_img_projected
-
+            cam_img_right[cam_img_right<threshold] = 0
+            H = self.get_planar_homography(right_to_left=right_to_left)
+            cam_res_left = self.camera_left.resolution
+            projected_img = cv2.warpPerspective(cam_img_right, H, cam_res_left)
         else:
-            raise NotImplementedError
-
+            cam_img_left = self.camera_left.get_image(grayscale=True)
+            cam_img_left[cam_img_left<threshold] = 0
+            H = self.get_planar_homography(right_to_left=right_to_left)
+            cam_res_right = self.camera_right.resolution
+            projected_img = cv2.warpPerspective(cam_img_left, H, cam_res_right)
+        return projected_img
+           
     def overlap_views(self, threshold=100, left_view=True):
         if left_view:
-            projected = self.get_projected_view_img(threshold)
-            left_view = self.camera_left.get_image(grayscale=True)
-            left_view[left_view<=threshold] = 0
-            black = np.zeros(left_view.shape, dtype=np.uint8)
-            mask = np.logical_and(left_view>0, projected>0)
-            not_mask = np.logical_not(mask)
-            green = np.maximum(left_view, projected)
-            green.astype(np.uint8)
-            green[not_mask] = 0
-
-
-            overlapped = np.dstack((left_view, green, projected))
-            return overlapped
-            
-
+            cam_img_left = self.camera_left.get_image(grayscale=True)
+            projected = self.get_projected_view_img(threshold, left_view)
+            overlapped = np.dstack((projected, np.zeros(projected.shape, dtype=np.uint8), cam_img_left))
         else:
-            raise NotImplementedError
+            cam_img_right = self.camera_right.get_image(grayscale=True)
+            projected = self.get_projected_view_img(threshold, left_view)
+            overlapped = np.dstack((projected, np.zeros(projected.shape, dtype=np.uint8), cam_img_right))
+        return overlapped
 
 
 
