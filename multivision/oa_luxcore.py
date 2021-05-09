@@ -318,7 +318,9 @@ class Camera(ObjectTemplate):
             scene.render.filepath = os.path.join(os.getcwd(), directory, filename)
         bpy.ops.render.render(write_still=True)
     
-    def get_image(self, grayscale=False):
+    def get_image(self, exposure=None, grayscale=False):
+        if exposure is not None:
+            bpy.context.scene.view_settings.exposure = exposure
         self.render("latest_render.png")
         if grayscale:
             img = cv2.imread("latest_render.png", 0)
@@ -746,13 +748,49 @@ class LuxcoreStereoLaserScanner(TricopicTemplate):
             #cam_left_img = cv2.cvtColor(cam_left_img, cv2.COLOR_RGB2GRAY)
             #cam_left_img = np.max(cam_left_img, axis=2)
             projected = self.get_projected_view_img(filter_function, left_view, cam_right_img=cam_right_img)
-            overlapped = np.dstack((projected, np.zeros(projected.shape, dtype=np.uint8), cam_left_img))
+            other_view = cam_left_img 
         else:
             cam_right_img = self.camera_right.get_image(grayscale=False)
             projected = self.get_projected_view_img(filter_function, left_view)
-            overlapped = np.dstack((projected, np.zeros(projected.shape, dtype=np.uint8), cam_right_img))
+            other_view = cam_right_img
         print("f end: overlap_views")
-        return overlapped
+        return projected, other_view
+
+    def get_ground_truth_scan(self, render_time=8, left_view=True):
+        orig_depth_total = bpy.context.scene.luxcore.config.path.depth_total 
+        orig_depth_diffuse = bpy.context.scene.luxcore.config.path.depth_total
+        orig_depth_glossy = bpy.context.scene.luxcore.config.path.depth_glossy
+        orig_depth_specualar = bpy.context.scene.luxcore.config.path.depth_specular
+        orig_lighttrace = bpy.context.scene.luxcore.config.path.hybridbackforward_enable
+        orig_worldlight_gain = bpy.context.scene.world.luxcore.gain
+        orig_halt_time = bpy.context.scene.luxcore.halt.time
+
+
+        bpy.context.scene.luxcore.config.path.depth_total = 1
+        bpy.context.scene.luxcore.config.path.depth_diffuse = 1
+        bpy.context.scene.luxcore.config.path.depth_glossy = 1
+        bpy.context.scene.luxcore.config.path.depth_specular = 1
+        bpy.context.scene.luxcore.config.path.hybridbackforward_enable = False
+        bpy.context.scene.luxcore.halt.time = render_time
+
+        print("")
+        cam_left_img_rgb = self.camera_left.get_image(grayscale=False)
+        print("")
+        bpy.context.scene.world.luxcore.gain = 0
+        cam_left_img_filtered = self.camera_left.get_image(grayscale=True)
+
+        bpy.context.scene.luxcore.config.path.depth_total = orig_depth_total
+        bpy.context.scene.luxcore.config.path.depth_diffuse = orig_depth_diffuse
+        bpy.context.scene.luxcore.config.path.depth_glossy = orig_depth_glossy
+        bpy.context.scene.luxcore.config.path.depth_specular = orig_depth_specualar
+        bpy.context.scene.luxcore.config.path.hybridbackforward_enable =orig_lighttrace
+        bpy.context.scene.world.luxcore.gain = orig_worldlight_gain
+        bpy.context.scene.luxcore.halt.time = orig_halt_time
+
+
+        return cam_left_img_rgb, cam_left_img_filtered
+        
+
 
 
 

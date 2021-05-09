@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import time
+import matplotlib.pyplot as plt
 
 def nothing(x):
     pass
@@ -31,6 +32,52 @@ def filter_hsv(image, lower_hsv, upper_hsv, to_grayscale=True):
 
     return result
 
+def row_wise_max_mask(mat, row_sum_threshold=0):
+    row_sums = np.sum(mat, axis=1, keepdims=True)>row_sum_threshold
+    mask = np.where(row_sums, mat.max(axis=1,keepdims=1) == mat, 0)
+    mask = mask.astype(np.bool)
+    return mask
+
+
+def row_wise_max_index_mask(mat):
+    ind = np.indices(mat.shape)[1]
+    img_filter = np.where(mat>0, ind, 0)
+    img_filter = row_wise_max_mask(img_filter)
+    return img_filter
+
+def shift_add_values(mat, shift_array):
+    for shift in shift_array:
+        mat += np.roll(mat, shift)
+    return mat
+
+def shift_add_horizontal(mat, shift_num, right_to_left=True):
+    result = mat
+    print("shift_num", shift_num)
+    for x_shift in range(shift_num-1):
+        copy_mat = mat.copy()
+        print("average line with result")
+        print(get_average_line_width(result))
+        print("average line with mat")
+        print(get_average_line_width(mat))
+
+        result += np.bitwise_or(mat, np.roll(copy_mat, (0, -1)))
+    result = result.astype(np.bool)
+    return result
+
+
+def get_average_line_width(img, ceil=True):
+    masked = np.where(img>0, 1, 0)
+    row_wise_sum = np.sum(masked, axis=1)
+    average_line_width = np.mean(row_wise_sum)
+    if ceil:
+        result = np.ceil(average_line_width)
+    else:
+        result = np.floor(average_line_width)
+    return int(result)
+
+
+
+
 
 def make_color_wheel_image(img_width, img_height):
     # source: https://stackoverflow.com/questions/65609247/create-color-wheel-pattern-image-in-python
@@ -56,35 +103,52 @@ def HSV_trackbar(value_name, trackbar_name, start_val):
     cv2.createTrackbar(f'{value_name} SAT', trackbar_name, start_val, 255, nothing)
     cv2.createTrackbar(f'{value_name} VAL', trackbar_name, start_val, 255, nothing)
 
+def init_HSV_trackbar(value_name, trackbar_name, start_vals):
+    cv2.createTrackbar(f'{value_name} HUE', trackbar_name, start_vals[0], 180, nothing)
+    cv2.createTrackbar(f'{value_name} SAT', trackbar_name, start_vals[1], 255, nothing)
+    cv2.createTrackbar(f'{value_name} VAL', trackbar_name, start_vals[2], 255, nothing)
+
 def read_HSV_trackbar(value_name, trackbar_name):
     h = cv2.getTrackbarPos(f'{value_name} HUE', trackbar_name)
     s = cv2.getTrackbarPos(f'{value_name} SAT', trackbar_name)
     v = cv2.getTrackbarPos(f'{value_name} VAL', trackbar_name)
     return np.array([h,s,v])
 
-def sum_channels_if_bitwise_nonzero(img, channel1, channel2):
-    first_img = img[:,:,channel1]
-    second_img = img[:,:,channel2]
+def sum_channels_if_bitwise_nonzero(first_img, second_img):
     indices = np.bitwise_and(first_img>0, second_img>0)
     new_img = np.zeros_like(first_img)
     new_img[indices] = first_img[indices] + second_img[indices]
     new_img = np.clip(new_img, 0, 255)
-    result = np.dstack((new_img, new_img, new_img))
-    result[:,:,channel1] = first_img
-    result[:,:,channel2] = second_img
+    return nnew_img
+
+
+def average_channels_if_bitwise_nonzero(first_img, second_img):
+    indices = np.bitwise_and(first_img>0, second_img>0)
+    ind_img = np.zeros_like(first_img, dtype=np.bool)
+    ind_img[indices] = True
+    stacked = np.dstack((first_img, second_img))
+    averaged = np.average(stacked, axis=2)
+    new_img = np.where(ind_img, averaged, 0)
+    new_img = np.clip(new_img, 0, 255)
+    new_img = new_img.astype(np.uint8)
+    return new_img
+
+def get_bitwise_nonzero_mask(first_img, second_img):
+    first_img_mask = first_img>0
+    second_img_mask = second_img>0
+    result = np.zeros_like(first_img_mask, dtype=np.bool)
+    inds = np.bitwise_and(first_img_mask, second_img_mask)
+    result[inds] = True
     return result
-
-
 
 
     
 
-def filter_image_with_trackbar(img):
-
+def filter_image_with_trackbar(img, low_HSV_start=(0,0,0), high_HSV_start=(180,255,255)):
     cv2.namedWindow('image')
     cv2.namedWindow('colorwheel')
-    HSV_trackbar('LOW1', 'colorwheel', 0)
-    HSV_trackbar('HIGH1', 'colorwheel', 255)
+    init_HSV_trackbar('LOW1', 'colorwheel', low_HSV_start)
+    init_HSV_trackbar('HIGH1', 'colorwheel', high_HSV_start)
     switch = '0 : NO SAVE\n 1 : SAVE'
     cv2.createTrackbar(switch, 'colorwheel', 0, 1, nothing)
     
@@ -186,11 +250,33 @@ def main():
     cv2.imwrite("filtered.png", img)
     
 
+def test_avg_channels():
+    img1 = cv2.imread("testimg.png", 0)
+    img1 = cv2.resize(img1, (10, 10))
+    img2 = img1*1.5
+    img2[0,9] = 255
+    cv2.imshow("", img1)
+    cv2.waitKey(0)
+    cv2.imshow("", img2)
+    cv2.waitKey(0)
+    img3 = average_channels_if_bitwise_nonzero(img1, img2)
+    cv2.imshow("", img3)
+    cv2.waitKey(0)
+
     
+def test_get_avg_line_width():
+    img1 = cv2.imread("testimg.png", 0)
+    img1 = cv2.resize(img1, (100, 100))
+    cv2.imshow("", img1)
+    cv2.waitKey(0)
+    avg_line_width = get_average_line_width(img1)
+    print(avg_line_width)
+
 
 
 
 
 if __name__ == '__main__':
-    main()
+    #test_avg_channels()
+    test_get_avg_line_width()
 

@@ -1,5 +1,20 @@
 import bpy
 import numpy as np
+import cv2
+
+
+def cv2_imwrite(filename, img):
+    img2 = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+    cv2.imwrite(filename, img2)
+
+
+def cv2_imread(filename, colorcode=1):
+    img = cv2.imread(filename, colorcode)
+    img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGB)
+    return img
+
+
+
 
 def print_all_nodes():
     for node_tree in bpy.data.node_groups:

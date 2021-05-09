@@ -35,15 +35,22 @@ def set_hdri_luxcore(hdri_path):
     bpy.context.scene.world.luxcore.sampleupperhemisphereonly = True
 
 
-def set_random_hdri_luxcore(hdri_dir_path):
+def set_random_hdri_luxcore(hdri_dir_path, brightness_gain=None):
     hdri_paths = glob.glob(hdri_dir_path + "/*.hdr")
     hdri_path = random.choice(hdri_paths)
     set_hdri_luxcore(hdri_path)
     world_rot = random.uniform(0, 2*math.pi)
     bpy.context.scene.world.luxcore.rotation = world_rot
-    brightness_gain_exp = random.uniform(-1.0, 1.0)
-    brightness_gain = 2 ** brightness_gain_exp
-    bpy.context.scene.world.luxcore.gain = brightness_gain
+
+    if brightness_gain is None:
+        bpy.context.scene.world.luxcore.gain = 1.0
+    elif brightness_gain == "random":
+        brightness_gain_exp = random.uniform(-1.0, 1.0)
+        brightness_gain = 2 ** brightness_gain_exp
+        bpy.context.scene.world.luxcore.gain = brightness_gain
+    else: 
+        bpy.context.scene.world.luxcore.gain = brightness_gain
+
 
 def set_random_pbr(bl_object, pbr_dir_path):
     pbr_path = path_to_random_file(pbr_dir_path)
