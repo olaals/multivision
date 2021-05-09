@@ -302,6 +302,11 @@ class Camera(ObjectTemplate):
         self.camera.rotation_euler = rotation
         self.axis = Axis(self.camera)
 
+        # adjust scene res
+        scene = bpy.context.scene
+        scene.render.resolution_x = self.resolution[0]
+        scene.render.resolution_y = self.resolution[1]
+
     def render(self, filename, directory=None):
         scene = bpy.context.scene
         scene.camera = self.camera
@@ -710,33 +715,43 @@ class LuxcoreStereoLaserScanner(TricopicTemplate):
         return homg
 
 
-
-
-
-    def get_projected_view_img(self, threshold=100, right_to_left=True):
+    def get_projected_view_img(self, filter_function, right_to_left=True, cam_left_img = None, cam_right_img=None):
+        print("f: get_projected_view")
         if right_to_left:
-            cam_img_right = self.camera_right.get_image(grayscale=True)
-            cam_img_right[cam_img_right<threshold] = 0
+            if cam_right_img is None:
+                cam_right_img = self.camera_right.get_image(grayscale=False)
+            cam_right_img = filter_function(cam_right_img)
+            #cam_right_img = cv2.cvtColor(cam_right_img, cv2.COLOR_RGB2GRAY)
+            #cam_right_img = np.max(cam_right_img, axis=2)
             H = self.get_planar_homography(right_to_left=right_to_left)
             cam_res_left = self.camera_left.resolution
-            projected_img = cv2.warpPerspective(cam_img_right, H, cam_res_left)
+            projected_img = cv2.warpPerspective(cam_right_img, H, cam_res_left)
         else:
-            cam_img_left = self.camera_left.get_image(grayscale=True)
-            cam_img_left[cam_img_left<threshold] = 0
+            cam_left_img = self.camera_left.get_image(grayscale=False)
+            cam_left_img = filter_function(cam_left_img)
+            #cam_left_img = cv2.cvtColor(cam_left_img, cv2.COLOR_RGB2GRAY)
             H = self.get_planar_homography(right_to_left=right_to_left)
             cam_res_right = self.camera_right.resolution
-            projected_img = cv2.warpPerspective(cam_img_left, H, cam_res_right)
+            projected_img = cv2.warpPerspective(cam_left_img, H, cam_res_right)
+        print("f end: get_projected_view")
         return projected_img
+
            
-    def overlap_views(self, threshold=100, left_view=True):
+    def overlap_views(self, filter_function, left_view=True, cam_left_img=None, cam_right_img=None):
+        print("f: overlap_views")
         if left_view:
-            cam_img_left = self.camera_left.get_image(grayscale=True)
-            projected = self.get_projected_view_img(threshold, left_view)
-            overlapped = np.dstack((projected, np.zeros(projected.shape, dtype=np.uint8), cam_img_left))
+            if cam_left_img is None:
+                cam_left_img = self.camera_left.get_image(grayscale=False)
+            cam_left_img = filter_function(cam_left_img)
+            #cam_left_img = cv2.cvtColor(cam_left_img, cv2.COLOR_RGB2GRAY)
+            #cam_left_img = np.max(cam_left_img, axis=2)
+            projected = self.get_projected_view_img(filter_function, left_view, cam_right_img=cam_right_img)
+            overlapped = np.dstack((projected, np.zeros(projected.shape, dtype=np.uint8), cam_left_img))
         else:
-            cam_img_right = self.camera_right.get_image(grayscale=True)
-            projected = self.get_projected_view_img(threshold, left_view)
-            overlapped = np.dstack((projected, np.zeros(projected.shape, dtype=np.uint8), cam_img_right))
+            cam_right_img = self.camera_right.get_image(grayscale=False)
+            projected = self.get_projected_view_img(filter_function, left_view)
+            overlapped = np.dstack((projected, np.zeros(projected.shape, dtype=np.uint8), cam_right_img))
+        print("f end: overlap_views")
         return overlapped
 
 

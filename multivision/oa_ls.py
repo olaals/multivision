@@ -41,8 +41,17 @@ def create_laser_scan_line_periodical_color(colors_list,  step, image_width, ima
 
 
 
+
 if __name__ == '__main__':
-    img = create_laser_scan_line_speckle((0,0,255), 3, 1920, 1080)
+
+    #img = create_laser_scan_line_speckle((0,0,255), 3, 200, 200)
+    img = make_color_wheel_image(200, 200)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    
+    img = filter_hsv(img, (100, 0, 0), (110, 255,255))
+
+
+    img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
     cv2.imshow("sfdf", img)
     cv2.waitKey(0)
     cv2.imwrite("testimg.png", img)

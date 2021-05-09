@@ -2,6 +2,14 @@ import bpy
 from oa_blender import numpy_img_to_blender_img
 from oa_file_utils import *
 
+def smart_project_uv(obj):
+    lm = obj.data.uv_layers.new(name="LightMap") #new UV layer for lightmapping
+    lm.active = True
+    bpy.ops.object.editmode_toggle() 
+    bpy.ops.mesh.select_all(action='SELECT') 
+    bpy.ops.mesh.remove_doubles(threshold=0.001, use_unselected=False) 
+    bpy.ops.uv.smart_project(angle_limit=66.0, island_margin=0.222, user_area_weight=0.0, use_aspect=True, stretch_to_bounds=False)
+    bpy.ops.object.editmode_toggle() 
 
 def assign_material(object, material):
 
@@ -40,6 +48,26 @@ def assign_material(object, material):
         object.material_slots[obj.active_material_index].material = mat
     else:
         object.data.materials.append(mat)
+
+    return mat_node
+
+def assign_anisotropic(object, u_roughness, v_roughness):
+    smart_project_uv(object)
+    mat_node = assign_material(object, "Metal")
+    mat_node.use_anisotropy = True
+    mat_node.input_type = 'fresnel'
+    mat_node.inputs[2].default_value = u_roughness
+    mat_node.inputs[3].default_value = v_roughness
+
+def assign_alu_low_matte(object, mix, u_roughness, v_roughness):
+    smart_project_uv(object)
+    matnode_alu, matnode_matte = assign_mix_material(object, "Metal", "Matte", mix)
+    matnode_alu.use_anisotropy = True
+    matnode_alu.input_type = 'fresnel'
+    matnode_alu.inputs[2].default_value = u_roughness
+    matnode_alu.inputs[3].default_value = v_roughness
+
+
 
 
 def assign_pbr_material(object, pbr_dir_path):
@@ -174,6 +202,7 @@ def assign_mix_material(object, material1, material2, weight=0.5):
     mat_node1 = nodes.new(luxcore_mat_dict[material1])
     mat_node2 = nodes.new(luxcore_mat_dict[material2])
     mix_node = nodes.new(luxcore_mat_dict["Mix"])
+    mix_node.inputs[2].default_value = weight
     mat_node1.location = 20, 100
     mat_node2.location = 20, 300
     mix_node.location = 200, 200
@@ -187,4 +216,7 @@ def assign_mix_material(object, material1, material2, weight=0.5):
         object.material_slots[object.active_material_index].material = mat
     else:
         object.data.materials.append(mat)
+
+    return mat_node1, mat_node2
+
 
