@@ -7,7 +7,7 @@ def nothing(x):
     pass
     #print(x)
 
-def filter_hsv(image, lower_hsv, upper_hsv, to_grayscale=True):
+def filter_hsv(image, lower_hsv, upper_hsv, to_grayscale=True, return_mask_only=False):
     result = image.copy()
     image = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
     if lower_hsv[0] == upper_hsv[0]:
@@ -30,7 +30,12 @@ def filter_hsv(image, lower_hsv, upper_hsv, to_grayscale=True):
     if to_grayscale:
         result = np.max(result, axis=2)
 
-    return result
+
+
+    if return_mask_only:
+        return mask
+    else:
+        return result
 
 def row_wise_max_mask(mat, row_sum_threshold=0):
     row_sums = np.sum(mat, axis=1, keepdims=True)>row_sum_threshold
