@@ -372,7 +372,7 @@ class StereoTemplate(ObjectTemplate):
         transl_RL_R = self.get_translation_right_to_left_optical()
         rot_RL = self.get_rotation_right_to_left_optical()
         rot_RL = np.array(rot_RL)
-        essential_matrix = rot_RL@oarb.vec_to_so3(transl_RL_R)
+        essential_matrix = oarb.vec_to_so3(transl_RL_R)@rot_RL
         return essential_matrix
     
     def get_rotation_left_to_right_optical(self, mode="matrix", return_numpy=False):
@@ -439,18 +439,27 @@ class StereoTemplate(ObjectTemplate):
         else:
             return transl_RL_R
 
-    def get_rectified_image_pair(self, crop_parameter):
-        left_img = self.__left_optical.get_image()
-        right_img = self.__right_optical.get_image()
+    def get_rectified_image_pair(self, crop_parameter, left_img=None, right_img=None):
+        if left_img is None:
+            left_img = self.__left_optical.get_image()
+        if right_img is None:
+            right_img = self.__right_optical.get_image()
         left_img_size = left_img.shape[0:2][::-1]
+        print("left_img_size", left_img_size)
         right_img_size = right_img.shape[0:2][::-1]
+        print("right_img_size", right_img_size)
         left_K = self.__left_optical.get_camera_matrix()
+        print("left K", left_K)
         right_K = self.__right_optical.get_camera_matrix()
+        print("right K", right_K)
         transl_RL_R = self.get_translation_right_to_left_optical(return_numpy=True)
+        print("transl_RL_R", transl_RL_R)
         rot_RL = self.get_rotation_right_to_left_optical(return_numpy=True)
+        print("rot_RL")
+        print(rot_RL)
         distCoeffs = None
 
-        R1,R2,P1,P2,Q,_,_ = cv2.stereoRectify(left_K, distCoeffs, right_K, distCoeffs, left_img_size, rot_RL, transl_RL_R, alpha=crop_parameter)
+        R1,R2,P1,P2,Q,_,_ = cv2.stereoRectify(left_K, distCoeffs, right_K, distCoeffs, left_img_size, rot_RL, transl_RL_R, alpha=crop_parameter, flags=cv2.CALIB_ZERO_DISPARITY)
         left_maps = cv2.initUndistortRectifyMap(left_K, distCoeffs, R1, P1, left_img_size, cv2.CV_16SC2)
         right_maps = cv2.initUndistortRectifyMap(right_K, distCoeffs, R2, P2, right_img_size, cv2.CV_16SC2)
         left_img_remap = cv2.remap(left_img, left_maps[0], left_maps[1], cv2.INTER_LANCZOS4)
@@ -520,6 +529,7 @@ class LuxcoreLaserScanner(StereoTemplate):
         image_without_projection = self.camera.get_image()
         filtered_image = filter_images(image_with_projection, image_without_projection, treshold)
         return filtered_image
+
 
 class LuxcoreStructuredLightScanner(StereoTemplate):
     def __init__(self, name, location=(0,0,0), orientation=(0,0,0), intra_axial_dist=0.2, angle=math.pi/20, lumens=1000, cam_res=(1920,1080), proj_res=(1920, 1080), cam_left=True):
