@@ -13,6 +13,7 @@ import cv2
 from oa_stereo_utils import *
 import matplotlib.pyplot as plt
 from oa_pointcloud_utils import *
+from oa_proj_geo_2d import *
 
 
 def luxcore_setup(render_time=60):
@@ -317,17 +318,36 @@ class Camera(ObjectTemplate):
         else:
             scene.render.filepath = os.path.join(os.getcwd(), directory, filename)
         bpy.ops.render.render(write_still=True)
-    
-    def get_image(self, exposure=None, grayscale=False):
-        if exposure is not None:
-            bpy.context.scene.view_settings.exposure = exposure
-        self.render("latest_render.png")
+
+    def load_image(self, filename, grayscale=False):
         if grayscale:
-            img = cv2.imread("latest_render.png", 0)
+            img = cv2.imread(filename, 0)
         else:
-            img = cv2.imread("latest_render.png")
+            img = cv2.imread(filename)
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         return img
+
+    
+    def get_image(self, exposure=None, grayscale=False, load_if_exist=None):
+        if exposure is not None:
+            bpy.context.scene.view_settings.exposure = exposure
+
+        if load_if_exist is None:
+            self.render("latest_render.png")
+            return self.load_image("latest_render.png", grayscale)
+        else:
+            if os.path.exists(load_if_exist):
+                return self.load_image(load_if_exist, grayscale)
+            else:
+                self.render(load_if_exist)
+                return self.load_image(load_if_exist, grayscale)
+
+
+
+
+        
+
+
 
     def show_image(self):
         img = self.get_image()
@@ -374,6 +394,14 @@ class StereoTemplate(ObjectTemplate):
         rot_RL = np.array(rot_RL)
         essential_matrix = oarb.vec_to_so3(transl_RL_R)@rot_RL
         return essential_matrix
+
+    def get_fundamental_matrix(self, right_to_left=True):
+        K_left = self.__left_optical.get_camera_matrix()
+        K_right = self.__right_optical.get_camera_matrix()
+        essential = self.get_essential_matrix(right_to_left)
+        F = np.linalg.inv(K_left).T @ essential @ np.linalg.inv(K_right)
+        return F
+
     
     def get_rotation_left_to_right_optical(self, mode="matrix", return_numpy=False):
         rot_BL = self.__left_optical.axis.get_rotation_parent().to_matrix()
@@ -525,11 +553,41 @@ class LuxcoreLaserScanner(StereoTemplate):
         self.laser.turn_on_projector()
         image_with_projection = self.camera.get_image()
         self.laser.turn_off_projector()
-        print(self.laser.light_object.data.luxcore.lumen)
         image_without_projection = self.camera.get_image()
         filtered_image = filter_images(image_with_projection, image_without_projection, treshold)
         return filtered_image
 
+    def get_laser_correspondance_img(self, step=1):
+        laser_img = self.laser.get_image()
+        F = self.get_fundamental_matrix()
+        cam_res = self.camera.resolution
+        laser_corr_img = np.zeros((cam_res[1], cam_res[0], 3), dtype=np.uint8)
+
+        F = self.get_fundamental_matrix()
+        mid_col_laser = int(laser_img.shape[1]/2)
+
+        for row in range(0, laser_img.shape[0]-step, step):
+            centre_point_homg2d = np.array([mid_col_laser, row, 1])
+            px_point = homg2d_to_px(centre_point_homg2d, laser_img.shape)
+            color = laser_img[int(px_point[1]), mid_col_laser, :]
+            color = (int(color[0]), int(color[1]), int(color[2]))
+            l1 = F.T@centre_point_homg2d
+            laser_corr_img = draw_line2d(laser_corr_img, l1, color=color)
+
+        return laser_corr_img
+
+
+
+    def show_laser_epipolar_lines(self, cam_img=None, step=10):
+        if cam_img is None:
+            cam_img = self.camera.get_image()
+        laser_img = self.laser.get_image()
+        epiline_img = self.get_laser_correspondance_img(step=step)
+        cam_img_lines = np.where(epiline_img>0, epiline_img, cam_img)
+        return cam_img_lines
+
+
+            
 
 class LuxcoreStructuredLightScanner(StereoTemplate):
     def __init__(self, name, location=(0,0,0), orientation=(0,0,0), intra_axial_dist=0.2, angle=math.pi/20, lumens=1000, cam_res=(1920,1080), proj_res=(1920, 1080), cam_left=True):

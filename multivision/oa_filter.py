@@ -7,6 +7,40 @@ def nothing(x):
     pass
     #print(x)
 
+def filter_similar_hue_multicolor(img1, img2, colors, hue_threshold, min_saturation=10, min_value=10,  pad=1):
+    img1_hsv = cv2.cvtColor(img1, cv2.COLOR_RGB2HSV)
+    img2_hsv = cv2.cvtColor(img2, cv2.COLOR_RGB2HSV)
+    img1_hue = img1_hsv[:,:,0]
+    img2_hue = img2_hsv[:,:,0]
+
+    mask = np.zeros_like(img1_hue, dtype=np.bool)
+    mask2 = img1_hsv[:,:,2]>0
+    convolve_mat = np.ones((pad*2+1, pad*2+1), dtype=np.bool)
+
+    for color in colors:
+        color = np.array(color)
+        norm_col = color/255
+        hsv_norm = colorsys.rgb_to_hsv(norm_col[0], norm_col[1], norm_col[2])
+        hsv_norm = np.array(hsv_norm)
+        hsv = (hsv_norm*180).astype(np.int16)
+        hue_low = hsv[0] - hue_threshold
+        hue_high = hsv[0] + hue_threshold
+        if hue_low<0:
+            hue_low = 180+hue_low
+        if hue_high>180:
+            hue_high = hue_high - 180
+        masked_img1 = filter_hsv(img1, (int(hue_low), min_saturation, min_value), (int(hue_high), 255,255), return_mask_only=True)
+        masked_img2 = filter_hsv(img2, (int(hue_low), min_saturation, min_value), (int(hue_high), 255,255), return_mask_only=True)
+        filtered = np.bitwise_and(masked_img1, masked_img2)
+
+        filtered_pad = convolve2d(filtered, convolve_mat, 'same')
+        filtered_pad = np.where(filtered_pad>0, True, False)
+        mask = np.bitwise_and(filtered_pad | mask, mask2)
+
+    return mask
+
+
+
 def filter_hsv(image, lower_hsv, upper_hsv, to_grayscale=True, return_mask_only=False):
     result = image.copy()
     image = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
