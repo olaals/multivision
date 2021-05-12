@@ -64,6 +64,11 @@ def get_image_list_from_folder(directory):
         pattern_img_list.append(image)
     return pattern_img_list
 
+def delete_comp_node_tree():
+    nodesField = bpy.context.scene.node_tree
+    for currentNode in nodesField.nodes:
+        nodesField.nodes.remove(currentNode)
+
 def numpy_img_to_blender_img(numpy_img):
     size = np.shape(numpy_img)
     image = bpy.data.images.new("blImg", width=size[1], height=size[0], alpha=False)

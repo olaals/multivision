@@ -188,14 +188,16 @@ class CyclesProjector(ObjectTemplate):
 
 
 class LuxcoreProjector(ObjectTemplate):
-    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), lumens=1000, normalize_color_luminance=True, resolution = (1920,1080), focal_length=36, px_size_mm=10e-3):
+    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), lumens=1000, normalize_color_luminance=True, resolution = (1920,1080), focal_length=36, sensor_width=24, set_default_blue=True):
         self.name = name
         self.focal_length = focal_length
-        self.px_size_mm = px_size_mm
+        self.px_size_mm = sensor_width/resolution[0]
         self.resolution = resolution
         self.spot = bpy.data.lights.new(name=name + "_spot", type='SPOT')
         self.lumens = lumens
         self.light_object = bpy.data.objects.new(name=name +"_lightobj", object_data=self.spot)
+        self.camera = Camera(name+"_cam", resolution=resolution, focal_length=focal_length, sensor_width=sensor_width)
+        self.camera.set_parent(self.light_object)
         super().__init__(self.light_object)
         self.light_object.data.luxcore.light_unit = 'lumen'
         self.light_object.data.luxcore.lumen=lumens
@@ -206,6 +208,15 @@ class LuxcoreProjector(ObjectTemplate):
         self.axis = Axis(self.light_object)
         self.update_fov()
         self.projection_image = None
+        if set_default_blue:
+            self.set_default_blue()
+
+
+    def set_default_blue(self):
+        proj_res = self.resolution
+        blue_img = oasli.create_blue_img(proj_res[0], proj_res[1])
+        self.set_projector_image(blue_img)
+
 
     def update_fov(self):
         theta = 2*np.arctan((self.px_size_mm*min(self.resolution[0], self.resolution[1]))/(2*self.focal_length))
@@ -232,8 +243,8 @@ class LuxcoreProjector(ObjectTemplate):
 
     def get_camera_matrix(self):
         focal = self.focal_length
-        u_0 = self.resolution[0]/2
-        v_0 = self.resolution[1]/2
+        u_0 = (self.resolution[0]-1)/2
+        v_0 = (self.resolution[1]-1)/2
         K = np.array([
             [focal/self.px_size_mm,    0.0, u_0],
             [      0, focal/self.px_size_mm, v_0],
@@ -268,8 +279,8 @@ class LuxcoreProjector(ObjectTemplate):
 
 
 class LuxcoreLaser(LuxcoreProjector):
-    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), lumens=20, resolution=(1921,1080), line_width_px=1, laser_color=(255,0,0), focal_length=36, px_size_mm=10e-3):
-        super().__init__(name, location=location, orientation=orientation, lumens=lumens, normalize_color_luminance=True, resolution=resolution, focal_length=focal_length, px_size_mm=px_size_mm)
+    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), lumens=20, resolution=(1921,1080), line_width_px=1, laser_color=(255,0,0), focal_length=36, sensor_width=24):
+        super().__init__(name, location=location, orientation=orientation, lumens=lumens, normalize_color_luminance=True, resolution=resolution, focal_length=focal_length, sensor_width=sensor_width)
         laser_img = oals.create_laser_scan_line(laser_color, line_width_px, resolution[0], resolution[1])
         self.set_projector_image(laser_img)
 
@@ -286,18 +297,19 @@ class LuxcoreLaser(LuxcoreProjector):
 
 
 class Camera(ObjectTemplate):
-    def __init__(self, name, location=(0,0,0), rotation=(0,0,0), resolution=(1920,1080), focal_length=36, pixel_size_mm=10e-3):
+    def __init__(self, name, location=(0,0,0), rotation=(0,0,0), resolution=(1920,1080), focal_length=36, sensor_width=24):
         self.name = name
         self.resolution = resolution
-        self.pixel_size_mm = pixel_size_mm
         self.focal_length = focal_length
+        self.pixel_size_mm = sensor_width/resolution[0]
         cam = bpy.data.cameras.new(name)
         self.camera = bpy.data.objects.new(name, cam)
         super().__init__(self.camera)
         self.camera.data.lens = focal_length
         self.camera.data.sensor_fit = 'HORIZONTAL'
-        self.camera.data.sensor_width = resolution[0]*pixel_size_mm
-        self.camera.data.sensor_height = resolution[1]*pixel_size_mm
+        self.sensor_width = sensor_width
+        self.camera.data.sensor_height = resolution[1]*self.pixel_size_mm
+        self.camera.data.sensor_width = sensor_width
         bpy.context.collection.objects.link(self.camera)
         self.camera.location = location
         self.camera.rotation_euler = rotation
@@ -308,16 +320,75 @@ class Camera(ObjectTemplate):
         scene.render.resolution_x = self.resolution[0]
         scene.render.resolution_y = self.resolution[1]
 
-    def render(self, filename, directory=None):
+    def render(self, filename=None, directory=None, halt_time=10):
+        bpy.context.scene.luxcore.halt.time = halt_time
         scene = bpy.context.scene
         scene.camera = self.camera
         scene.render.resolution_x = self.resolution[0]
         scene.render.resolution_y = self.resolution[1]
-        if directory is None:
-            scene.render.filepath = os.path.join(os.getcwd(), filename)
+        if filename is not None:
+            if directory is None:
+                scene.render.filepath = os.path.join(os.getcwd(), filename)
+            else:
+                scene.render.filepath = os.path.join(os.getcwd(), directory, filename)
+            bpy.ops.render.render(write_still=True)
         else:
-            scene.render.filepath = os.path.join(os.getcwd(), directory, filename)
-        bpy.ops.render.render(write_still=True)
+            bpy.ops.render.render()
+
+    def render_passes(self, image=None, depth=None, halt_time=10):
+        if depth is not None:
+            bpy.context.scene.view_layers["View Layer"].luxcore.aovs.position = True
+
+        print("render_passes")
+        oabl.delete_comp_node_tree()
+        bpy.context.scene.use_nodes = True
+        comp_node_tree = bpy.context.scene.node_tree
+        print("comp node tree", comp_node_tree)
+        render_layers_node = comp_node_tree.nodes.new("CompositorNodeRLayers")
+        comp_node = comp_node_tree.nodes.new("CompositorNodeComposite")
+        comp_node_tree.links.new(render_layers_node.outputs[0], comp_node.inputs[0])
+
+        if depth is not None:
+            file_out_depth_node = comp_node_tree.nodes.new("CompositorNodeOutputFile")
+            comp_node_tree.links.new(render_layers_node.outputs[2], file_out_depth_node.inputs[0])
+            file_out_depth_node.format.file_format = "OPEN_EXR"
+            depth_out_dir = os.path.join(os.getcwd(), depth)+os.sep
+            os.makedirs(depth_out_dir, exist_ok=True)
+            file_out_depth_node.base_path = depth_out_dir
+
+        self.render(image, halt_time=halt_time)
+        bpy.context.scene.view_layers["View Layer"].luxcore.aovs.position = False
+        bpy.context.scene.use_nodes = False
+
+    def get_depth_image(self, halt_time=10):
+        bpy.context.scene.view_layers["View Layer"].luxcore.aovs.position = True
+        bpy.context.scene.use_nodes = True
+        comp_node_tree = bpy.context.scene.node_tree
+        oabl.delete_comp_node_tree()
+        render_layers_node = comp_node_tree.nodes.new("CompositorNodeRLayers")
+        comp_node = comp_node_tree.nodes.new("CompositorNodeComposite")
+        comp_node_tree.links.new(render_layers_node.outputs[0], comp_node.inputs[0])
+        viewer_node = comp_node_tree.nodes.new("CompositorNodeViewer")
+        viewer_node.use_alpha=False
+        comp_node_tree.links.new(render_layers_node.outputs[2], viewer_node.inputs[0])
+        self.render(halt_time=halt_time)
+        bl_img = bpy.data.images['Viewer Node']
+        np_img = oabl.blender_img_to_numpy_img(bl_img).astype(np.float32)
+        return np_img
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     def load_image(self, filename, grayscale=False):
         if grayscale:
@@ -342,21 +413,10 @@ class Camera(ObjectTemplate):
                 self.render(load_if_exist)
                 return self.load_image(load_if_exist, grayscale)
 
-
-
-
-        
-
-
-
     def show_image(self):
         img = self.get_image()
         plt.imshow(img)
         plt.show()
-
-        
-
-
 
     def get_camera_matrix(self):
         width = self.resolution[0] #* scale # px
@@ -540,9 +600,9 @@ class StereoCamera(StereoTemplate):
 
 
 class LuxcoreLaserScanner(StereoTemplate):
-    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), intra_axial_dist=0.2, angle=math.pi/20, lumens=20, camera_resolution=(1920,1080),camera_pixel_size = 10e-3, laser_resolution=(1920,1080), cam_left=True):
-        self.camera = Camera(name + "_camera", resolution=camera_resolution, pixel_size_mm=camera_pixel_size)
-        self.laser = LuxcoreLaser(name + "_laser", lumens=lumens, resolution=laser_resolution)
+    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), intra_axial_dist=0.2, angle=math.pi/20, lumens=20, camera_resolution=(1920,1080),camera_sensor_width = 24, laser_resolution=(1920,1080), laser_sensor_width=24, cam_left=True):
+        self.camera = Camera(name + "_camera", resolution=camera_resolution, sensor_width=sensor_width)
+        self.laser = LuxcoreLaser(name + "_laser", lumens=lumens, resolution=laser_resolution, sensor_width=laser_sensor_width)
         if cam_left:
             super().__init__(name, self.camera, self.laser, location, orientation, intra_axial_dist, angle)
         else:
@@ -573,10 +633,7 @@ class LuxcoreLaserScanner(StereoTemplate):
             color = (int(color[0]), int(color[1]), int(color[2]))
             l1 = F.T@centre_point_homg2d
             laser_corr_img = draw_line2d(laser_corr_img, l1, color=color)
-
         return laser_corr_img
-
-
 
     def show_laser_epipolar_lines(self, cam_img=None, step=10):
         if cam_img is None:
@@ -761,9 +818,9 @@ class TricopicTemplate(ObjectTemplate):
         
 
 class LuxcoreStereoLaserScanner(TricopicTemplate):
-    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), intra_axial_dists=[0.2,0.2], angles=[math.pi/20, math.pi/20], lumens=1000, resolutions=[(1920,1080), (1920, 1080)], px_sizes = [10e-3, 10e-3]):
-        self.camera_left = Camera(name + "_camera", resolution=resolutions[0], pixel_size_mm=px_sizes[0])
-        self.camera_right = Camera(name + "_camera", resolution=resolutions[1], pixel_size_mm=px_sizes[1])
+    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), intra_axial_dists=[0.2,0.2], angles=[math.pi/20, math.pi/20], lumens=1000, resolutions=[(1920,1080), (1920, 1080)], sensor_widths = [24, 24]):
+        self.camera_left = Camera(name + "_camera", resolution=resolutions[0], sensor_width=sensor_widths[0])
+        self.camera_right = Camera(name + "_camera", resolution=resolutions[1], sensor_width=sensor_widths[1])
         self.laser = LuxcoreLaser(name + "_laser", lumens=lumens)
         super().__init__(name, self.camera_left, self.laser, self.camera_right, location, orientation, intra_axial_dists, angles)
 
