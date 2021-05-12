@@ -50,8 +50,24 @@ class Axis:
         R_CA = self.axis.rotation_euler.copy()
         R_BC = self.parent.rotation_euler.copy()
         R_BA = R_BC.to_matrix()@R_CA.to_matrix()
-
         return R_BA.to_euler()
+
+    def get_transf_from_world(self, return_numpy=False):
+        bpy.context.view_layer.update()
+        T_WO = self.axis.matrix_world.copy()
+        if return_numpy:
+            return np.array(T_WO)
+        else:
+            return T_WO
+
+    def get_transf_to_world(self, return_numpy=False):
+        bpy.context.view_layer.update()
+        T_OW = self.axis.matrix_world.copy()
+        T_OW.invert()
+        if return_numpy:
+            return np.array(T_OW)
+        else:
+            return T_OW
         
 
 class ObjectTemplate:
@@ -67,6 +83,7 @@ class ObjectTemplate:
 
     def set_rotation(self, rotation, mode="euler"):
         self.__object.rotation_euler = rotation
+        bpy.context.view_layer.update()
 
     def get_rotation(self, mode="euler"):
         return self.__object.rotation_euler
@@ -78,20 +95,32 @@ class ObjectTemplate:
         return self.__object.parent
     
     def look_at(self, look_at_point):
-        print(type(self.__object))
-        print("look at")
-
+        bpy.context.view_layer.update()
         location = self.__object.matrix_world.to_translation()
         look_at_point = mathutils.Matrix.Translation(look_at_point).to_translation()
-        print(look_at_point)
         direction = look_at_point - location
-        print("current location")
-        print(location)
-        print("direction")
-        print(direction)
         rot_quat = direction.to_track_quat('-Z', 'Y')
         self.__object.rotation_euler = rot_quat.to_euler()
-        print("")
+        bpy.context.view_layer.update()
+
+    def get_transf_from_world(self, return_numpy=False):
+        bpy.context.view_layer.update()
+        T_WO = self.__object.matrix_world.copy()
+        if return_numpy:
+            return np.array(T_WO)
+        else:
+            return T_WO
+
+    def get_transf_to_world(self, return_numpy=False):
+        bpy.context.view_layer.update()
+        T_OW = self.__object.matrix_world.copy()
+        T_OW.invert()
+        if return_numpy:
+            return np.array(T_OW)
+        else:
+            return T_OW
+
+
 
 class CyclesProjector(ObjectTemplate):
     def __init__(self, name="CyclesProj", location=(0,0,0), orientation=(0,0,0), resolution = (1920,1080), focal_length=36, px_size_mm=10e-3, light_strength=1000):
@@ -399,12 +428,12 @@ class Camera(ObjectTemplate):
         return img
 
     
-    def get_image(self, exposure=None, grayscale=False, load_if_exist=None):
+    def get_image(self, exposure=None, grayscale=False, load_if_exist=None, halt_time=10):
         if exposure is not None:
             bpy.context.scene.view_settings.exposure = exposure
 
         if load_if_exist is None:
-            self.render("latest_render.png")
+            self.render("latest_render.png", halt_time=halt_time)
             return self.load_image("latest_render.png", grayscale)
         else:
             if os.path.exists(load_if_exist):
@@ -600,8 +629,8 @@ class StereoCamera(StereoTemplate):
 
 
 class LuxcoreLaserScanner(StereoTemplate):
-    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), intra_axial_dist=0.2, angle=math.pi/20, lumens=20, camera_resolution=(1920,1080),camera_sensor_width = 24, laser_resolution=(1920,1080), laser_sensor_width=24, cam_left=True):
-        self.camera = Camera(name + "_camera", resolution=camera_resolution, sensor_width=sensor_width)
+    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), intra_axial_dist=0.2, angle=math.pi/20, lumens=20, camera_resolution=(1920,1080),camera_sensor_width = 24, laser_resolution=(1921,1080), laser_sensor_width=24, cam_left=True):
+        self.camera = Camera(name + "_camera", resolution=camera_resolution, sensor_width=camera_sensor_width)
         self.laser = LuxcoreLaser(name + "_laser", lumens=lumens, resolution=laser_resolution, sensor_width=laser_sensor_width)
         if cam_left:
             super().__init__(name, self.camera, self.laser, location, orientation, intra_axial_dist, angle)
