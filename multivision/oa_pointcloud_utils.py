@@ -34,6 +34,23 @@ def change_frame_of_pointcloud(points_frame2, transf_frame1_frame2):
     points_frame1 = np.einsum('ij,jk->ik', transf, points)[:3, :]
     return points_frame1
 
+def pointcloud_to_norm_coords(points):
+    assert(points.shape[0] == 3)
+    norm_coords = points/points[2,:]
+    return norm_coords
+
+def norm_to_pixel(norm_coords, cam_mat):
+    pix_coords = np.einsum('ij,jk->ik', cam_mat, norm_coords)
+    return pix_coords
+
+
+
+
+
+
+
+
+
 def pointcloud_to_image(points, cam_mat):
     assert(points.shape[0] == 3)
     assert(cam_mat.shape == (3,3))

@@ -390,6 +390,9 @@ class Camera(ObjectTemplate):
         bpy.context.scene.use_nodes = False
 
     def get_depth_image(self, halt_time=10):
+        orig_light_tracing = bpy.context.scene.luxcore.config.path.hybridbackforward_enable
+        bpy.context.scene.luxcore.config.path.hybridbackforward_enable = False
+
         bpy.context.scene.view_layers["View Layer"].luxcore.aovs.position = True
         bpy.context.scene.use_nodes = True
         comp_node_tree = bpy.context.scene.node_tree
@@ -403,6 +406,8 @@ class Camera(ObjectTemplate):
         self.render(halt_time=halt_time)
         bl_img = bpy.data.images['Viewer Node']
         np_img = oabl.blender_img_to_numpy_img(bl_img).astype(np.float32)
+
+        #bpy.context.scene.luxcore.config.path.hybridbackforward_enable = orig_light_tracing
         return np_img
 
 
@@ -555,6 +560,15 @@ class StereoTemplate(ObjectTemplate):
             return np.array(transl_RL_R)
         else:
             return transl_RL_R
+
+    def get_transf_left_to_right(self, return_numpy=False):
+        transl = self.get_translation_left_to_right_optical()
+        rot = self.get_rotation_left_to_right_optical()
+        transf = mathutils.Matrix.Translation(transl) @ rot.to_4x4()
+        if return_numpy:
+            return np.array(transf)
+        else:
+            return transf
 
     def get_rectified_image_pair(self, crop_parameter, left_img=None, right_img=None):
         if left_img is None:
