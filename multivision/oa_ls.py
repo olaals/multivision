@@ -49,7 +49,7 @@ def secdeg_momentum_subpix(img, mean_threshold=0.5):
     img_max = np.where(img_max == 0, 1, img_max)
     row_sums,mean = row_wise_mean_sum_where_nonzero(img)
     norm_img = img_float / img_max[:,None]
-    col_inds = np.indices(img.shape[:2])[1]
+    col_inds = np.indices(img.shape[:2])[1]+0.499
     I_2 = np.power(norm_img, 2)
     top = I_2*col_inds
     sum_top = np.sum(top, axis=1)
@@ -66,7 +66,17 @@ def subpix_to_image(subpix_array, img_shape):
     img[inds, x_ind] = 255
     return img
 
-def get_enlarged_subpix_comp(img, subpix_arr, factor=4):
+def remove_zero_columns_rgb(a):
+    idx = np.argwhere(np.all(np.sum(a, axis=2)[..., :, :] == 0, axis=0))
+    a2 = np.delete(a, idx, axis=1)
+    return a2
+
+def remove_zero_columns_2d(a):
+    idx = np.argwhere(np.all(a[..., :] == 0, axis=0))
+    a2 = np.delete(a, idx, axis=1)
+    return a2
+
+def get_enlarged_subpix_comp(img, subpix_arr, factor=4, crop_zero=True):
     img_l = cv2.resize(img, (factor*img.shape[1], factor*img.shape[0]), interpolation=cv2.INTER_NEAREST)
     xs_l = np.linspace(0,img_l.shape[0]-1, img.shape[0], dtype=np.uint16)
     xs_l2 = np.linspace(0,img_l.shape[0]-1, img_l.shape[0], dtype=np.uint16)
@@ -74,11 +84,9 @@ def get_enlarged_subpix_comp(img, subpix_arr, factor=4):
     subpix_l = f(xs_l2)*factor
     subpix_img_l = subpix_to_image(subpix_l, img_l.shape)
     stacked_l = np.dstack((img_l, subpix_img_l, np.zeros_like(subpix_img_l)))
+    if crop_zero:
+        stacked_l = remove_zero_columns_rgb(stacked_l)
     return stacked_l
-
-
-
-
 
 
 

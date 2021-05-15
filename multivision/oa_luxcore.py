@@ -268,8 +268,6 @@ class LuxcoreProjector(ObjectTemplate):
     def turn_on_projector(self):
         self.spot.luxcore.lumen = self.lumens
 
-
-
     def get_camera_matrix(self):
         focal = self.focal_length
         u_0 = (self.resolution[0]-1)/2
@@ -410,20 +408,6 @@ class Camera(ObjectTemplate):
         #bpy.context.scene.luxcore.config.path.hybridbackforward_enable = orig_light_tracing
         return np_img
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     def load_image(self, filename, grayscale=False):
         if grayscale:
             img = cv2.imread(filename, 0)
@@ -435,17 +419,19 @@ class Camera(ObjectTemplate):
     
     def get_image(self, exposure=None, grayscale=False, load_if_exist=None, halt_time=10):
         if exposure is not None:
+            orig_exp = bpy.context.scene.view_settings.exposure
             bpy.context.scene.view_settings.exposure = exposure
+
 
         if load_if_exist is None:
             self.render("latest_render.png", halt_time=halt_time)
             return self.load_image("latest_render.png", grayscale)
         else:
-            if os.path.exists(load_if_exist):
-                return self.load_image(load_if_exist, grayscale)
-            else:
+            if not os.path.exists(load_if_exist):
                 self.render(load_if_exist)
-                return self.load_image(load_if_exist, grayscale)
+
+        bpy.context.scene.view_settings.exposure = orig_exp
+        return self.load_image(load_if_exist, grayscale)
 
     def show_image(self):
         img = self.get_image()
@@ -496,7 +482,6 @@ class StereoTemplate(ObjectTemplate):
         F = np.linalg.inv(K_left).T @ essential @ np.linalg.inv(K_right)
         return F
 
-    
     def get_rotation_left_to_right_optical(self, mode="matrix", return_numpy=False):
         rot_BL = self.__left_optical.axis.get_rotation_parent().to_matrix()
         rot_BR = self.__right_optical.axis.get_rotation_parent().to_matrix()
@@ -555,7 +540,6 @@ class StereoTemplate(ObjectTemplate):
         rot_RB = rot_BR.transposed()
         transl_RL_B = transl_BL_B - transl_BR_B
         transl_RL_R = rot_RB@transl_RL_B
-
         if return_numpy:
             return np.array(transl_RL_R)
         else:
@@ -685,6 +669,46 @@ class LuxcoreLaserScanner(StereoTemplate):
         epiline_img = self.get_laser_correspondance_img(step=step)
         cam_img_lines = np.where(epiline_img>0, epiline_img, cam_img)
         return cam_img_lines
+
+    def get_ground_truth_scan(self, render_time=8, exposure=0, threshold_low=10):
+        orig_depth_total = bpy.context.scene.luxcore.config.path.depth_total 
+        orig_depth_diffuse = bpy.context.scene.luxcore.config.path.depth_total
+        orig_depth_glossy = bpy.context.scene.luxcore.config.path.depth_glossy
+        orig_depth_specualar = bpy.context.scene.luxcore.config.path.depth_specular
+        orig_lighttrace = bpy.context.scene.luxcore.config.path.hybridbackforward_enable
+        orig_worldlight_gain = bpy.context.scene.world.luxcore.gain
+        orig_halt_time = bpy.context.scene.luxcore.halt.time
+        orig_sky_gain = bpy.context.scene.world.luxcore.sun_sky_gain
+
+
+        bpy.context.scene.luxcore.config.path.depth_total = 1
+        bpy.context.scene.luxcore.config.path.depth_diffuse = 1
+        bpy.context.scene.luxcore.config.path.depth_glossy = 1
+        bpy.context.scene.luxcore.config.path.depth_specular = 1
+        bpy.context.scene.luxcore.config.path.hybridbackforward_enable = False
+        bpy.context.scene.luxcore.halt.time = render_time
+        bpy.context.scene.world.luxcore.gain = 0.0
+        bpy.context.scene.world.luxcore.sun_sky_gain = 0.0
+
+        print("")
+        cam_left_img_filtered = self.camera.get_image(grayscale=True, exposure=exposure)
+        cam_left_img_filtered[cam_left_img_filtered<threshold_low] = 0
+
+
+        bpy.context.scene.luxcore.config.path.depth_total = orig_depth_total
+        bpy.context.scene.luxcore.config.path.depth_diffuse = orig_depth_diffuse
+        bpy.context.scene.luxcore.config.path.depth_glossy = orig_depth_glossy
+        bpy.context.scene.luxcore.config.path.depth_specular = orig_depth_specualar
+        bpy.context.scene.luxcore.config.path.hybridbackforward_enable =orig_lighttrace
+        bpy.context.scene.world.luxcore.gain = orig_worldlight_gain
+        bpy.context.scene.luxcore.halt.time = orig_halt_time
+        bpy.context.scene.world.luxcore.sun_sky_gain = orig_sky_gain
+
+
+
+        
+
+        return cam_left_img_filtered
 
 
             
@@ -924,7 +948,7 @@ class LuxcoreStereoLaserScanner(TricopicTemplate):
         print("f end: overlap_views")
         return projected, other_view
 
-    def get_ground_truth_scan(self, render_time=8, left_view=True):
+    def get_ground_truth_scan(self, render_time=8, exposure=0, left_view=True):
         orig_depth_total = bpy.context.scene.luxcore.config.path.depth_total 
         orig_depth_diffuse = bpy.context.scene.luxcore.config.path.depth_total
         orig_depth_glossy = bpy.context.scene.luxcore.config.path.depth_glossy
@@ -941,9 +965,9 @@ class LuxcoreStereoLaserScanner(TricopicTemplate):
         bpy.context.scene.luxcore.config.path.hybridbackforward_enable = False
         bpy.context.scene.luxcore.halt.time = render_time
 
-        print("")
-        cam_left_img_rgb = self.camera_left.get_image(grayscale=False)
-        print("")
+        #print("")
+        #cam_left_img_rgb = self.camera_left.get_image(grayscale=False)
+        #print("")
         bpy.context.scene.world.luxcore.gain = 0
         cam_left_img_filtered = self.camera_left.get_image(grayscale=True)
 
@@ -956,7 +980,7 @@ class LuxcoreStereoLaserScanner(TricopicTemplate):
         bpy.context.scene.luxcore.halt.time = orig_halt_time
 
 
-        return cam_left_img_rgb, cam_left_img_filtered
+        return cam_left_img_filtered
         
 
 
