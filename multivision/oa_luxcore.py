@@ -740,7 +740,7 @@ class LuxcoreStructuredLightScanner(StereoTemplate):
         
     
 class TricopicTemplate(ObjectTemplate):
-    def __init__(self, name, left_optical, middle_optical, right_optical, location=(0,0,0), orientation=(0,0,0), intra_axial_dists=[0.2,0.2], angles = [math.pi/20, math.pi/20]):
+    def __init__(self, name, left_optical, middle_optical, right_optical, location=(0,0,0), orientation=(0,0,0), intra_axial_dists=[0.2,0.2], angles = [math.pi/20, math.pi/20], z_dist=0.0, z_angle=0.0):
         self.name = name
         cube_dim = max(intra_axial_dists)*2
         self.cube = oams.add_cuboid(name, (cube_dim, cube_dim/2, cube_dim/2), (0,0,cube_dim/4))
@@ -757,8 +757,8 @@ class TricopicTemplate(ObjectTemplate):
         self.__left_optical.set_parent(self.cube)
 
         self.__right_optical = right_optical
-        self.__right_optical.set_location((intra_axial_dists[1],0,0))
-        self.__right_optical.set_rotation((0, angles[1], 0))
+        self.__right_optical.set_location((intra_axial_dists[1],z_dist,0))
+        self.__right_optical.set_rotation((z_angle, angles[1], 0))
         self.__right_optical.set_parent(self.cube)
 
         self.__opticals = {'l': self.__left_optical, 'm': self.__middle_optical, 'r': self.__right_optical}
@@ -766,6 +766,15 @@ class TricopicTemplate(ObjectTemplate):
         self.cube.location = location
         self.cube.rotation_euler = orientation
         
+"""
+    def get_essential_matrix(self, right_to_left=True):
+        transl_RL_R = self.get_translation_right_to_left_optical()
+        rot_RL = self.get_rotation_right_to_left_optical()
+        rot_RL = np.array(rot_RL)
+        essential_matrix = oarb.vec_to_so3(transl_RL_R)@rot_RL
+        return essential_matrix
+"""
+
     def get_essential_matrix(self, from_to="l->r"):
         from_to.replace(" ", "")
         if from_to == "l->r":
@@ -885,11 +894,11 @@ class TricopicTemplate(ObjectTemplate):
         
 
 class LuxcoreStereoLaserScanner(TricopicTemplate):
-    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), intra_axial_dists=[0.2,0.2], angles=[math.pi/20, math.pi/20], lumens=1000, resolutions=[(1920,1080), (1920, 1080)], sensor_widths = [24, 24]):
+    def __init__(self, name, location=(0,0,0), orientation=(0,0,0), intra_axial_dists=[0.2,0.2], angles=[math.pi/20, math.pi/20], lumens=1000, resolutions=[(1920,1080), (1920, 1080), (1920, 1080)], sensor_widths = [24, 24, 24], z_dist=0.0, z_angle=0.0):
         self.camera_left = Camera(name + "_camera", resolution=resolutions[0], sensor_width=sensor_widths[0])
-        self.camera_right = Camera(name + "_camera", resolution=resolutions[1], sensor_width=sensor_widths[1])
-        self.laser = LuxcoreLaser(name + "_laser", lumens=lumens)
-        super().__init__(name, self.camera_left, self.laser, self.camera_right, location, orientation, intra_axial_dists, angles)
+        self.camera_right = Camera(name + "_camera", resolution=resolutions[2], sensor_width=sensor_widths[2])
+        self.laser = LuxcoreLaser(name + "_laser", resolution=resolutions[1], sensor_width=sensor_widths[1], lumens=lumens)
+        super().__init__(name, self.camera_left, self.laser, self.camera_right, location, orientation, intra_axial_dists, angles, z_dist, z_angle)
 
     def get_planar_homography(self, right_to_left=True):
         if right_to_left:
@@ -929,6 +938,24 @@ class LuxcoreStereoLaserScanner(TricopicTemplate):
             projected_img = cv2.warpPerspective(cam_left_img, H, cam_res_right)
         print("f end: get_projected_view")
         return projected_img
+
+    def get_laser_correspondance_img(self, step=1):
+        laser_img = self.laser.get_image()
+        F = self.get_fundamental_matrix()
+        cam_res = self.camera.resolution
+        laser_corr_img = np.zeros((cam_res[1], cam_res[0], 3), dtype=np.uint8)
+
+        F = self.get_fundamental_matrix()
+        mid_col_laser = int(laser_img.shape[1]/2)
+
+        for row in range(0, laser_img.shape[0]-step, step):
+            centre_point_homg2d = np.array([mid_col_laser, row, 1])
+            px_point = homg2d_to_px(centre_point_homg2d, laser_img.shape)
+            color = laser_img[int(px_point[1]), mid_col_laser, :]
+            color = (int(color[0]), int(color[1]), int(color[2]))
+            l1 = F.T@centre_point_homg2d
+            laser_corr_img = draw_line2d(laser_corr_img, l1, color=color)
+        return laser_corr_img
 
            
     def overlap_views(self, filter_function, left_view=True, cam_left_img=None, cam_right_img=None):
