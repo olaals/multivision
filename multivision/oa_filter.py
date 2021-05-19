@@ -2,10 +2,20 @@ import cv2
 import numpy as np
 import time
 import matplotlib.pyplot as plt
+import colorsys
+from scipy.signal import convolve2d
 
 def nothing(x):
     pass
     #print(x)
+
+def d3stack(mask):
+    return np.dstack((mask,mask,mask))
+
+def filter_value(img, value):
+    img_hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
+    mask = img_hsv[:,:,2]>value
+    return np.where(d3stack(mask), img, 0)
 
 def filter_similar_hue_multicolor(img1, img2, colors, hue_threshold, min_saturation=10, min_value=10,  pad=1):
     img1_hsv = cv2.cvtColor(img1, cv2.COLOR_RGB2HSV)

@@ -29,7 +29,11 @@ def import_stl(path):
     bl_obj = bpy.data.objects[bl_obj_name]
     return bl_obj
 
-def set_hdri_luxcore(hdri_path):
+def set_hdri_luxcore(hdri_path, gain=1.0, z_rot = 0):
+    bpy.context.scene.world.luxcore.gain = gain
+    bpy.context.scene.world.luxcore.rotation = z_rot
+
+
     bpy.context.scene.world.luxcore.light = 'infinite'
     bpy.context.scene.world.luxcore.image = bpy.data.images.load(hdri_path)
     bpy.context.scene.world.luxcore.sampleupperhemisphereonly = True

@@ -13,6 +13,14 @@ def cv2_imread(filename, colorcode=1):
     img = cv2.cvtColor(img, cv2.COLOR_BGRA2RGB)
     return img
 
+def cv2_write_mask(filename, mask):
+    mask_max=np.max(mask)
+    cv2_mask = mask*255/mask_max
+    cv2_mask = np.clip(cv2_mask, 0, 255)
+    cv2_mask = cv2_mask.astype(np.uint8)
+    cv2_imwrite(filename,cv2_mask)
+
+
 
 
 
