@@ -30,6 +30,23 @@ def filter_value(img, value):
     mask = img_hsv[:,:,2]>value
     return np.where(d3stack(mask), img, 0)
 
+def filter_value_gray(img, value):
+    mask = img>value
+    return np.where(mask, img, 0)
+
+def right_line_mask(img):
+    avg_lw = get_average_line_width(img)
+    right_max_mask = row_wise_max_index_mask(img)
+    stepwise_roll = right_max_mask
+    final_cumul = right_max_mask
+    for i in range(int(avg_lw*3)):
+        stepwise_roll = np.roll(stepwise_roll.copy(), (0, -1))
+        stepwise_roll = np.bitwise_and(stepwise_roll, img>0)
+        final_cumul = np.bitwise_or(stepwise_roll,final_cumul)
+    return final_cumul
+
+
+
 def filter_similar_hue_multicolor(img1, img2, colors, hue_threshold, min_saturation=10, min_value=10,  pad=1):
     img1_hsv = cv2.cvtColor(img1, cv2.COLOR_RGB2HSV)
     img2_hsv = cv2.cvtColor(img2, cv2.COLOR_RGB2HSV)
@@ -185,13 +202,10 @@ def sum_channels_if_bitwise_nonzero(first_img, second_img):
 
 
 def average_channels_if_bitwise_nonzero(first_img, second_img):
-    indices = np.bitwise_and(first_img>0, second_img>0)
-    ind_img = np.zeros_like(first_img, dtype=np.bool)
-    ind_img[indices] = True
+    mask = get_bitwise_nonzero_mask(first_img, second_img)
     stacked = np.dstack((first_img, second_img))
     averaged = np.average(stacked, axis=2)
-    new_img = np.where(ind_img, averaged, 0)
-    new_img = np.clip(new_img, 0, 255)
+    new_img = np.where(mask, averaged, 0)
     new_img = new_img.astype(np.uint8)
     return new_img
 
