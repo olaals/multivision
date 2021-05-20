@@ -1,4 +1,4 @@
-import bpy
+#import bpy
 import numpy as np
 import cv2
 

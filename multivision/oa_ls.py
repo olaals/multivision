@@ -44,6 +44,8 @@ def row_wise_mean_sum_where_nonzero(img):
     return row_sums,mean
 
 def secdeg_momentum_subpix(img, mean_threshold=0.5):
+    if len(img.shape) == 3:
+        img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     img_float = img.astype(np.float32)
     img_max = np.max(img_float, axis=1).astype(np.float32)
     img_max = np.where(img_max == 0, 1, img_max)

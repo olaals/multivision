@@ -15,7 +15,6 @@ import matplotlib.pyplot as plt
 from oa_pointcloud_utils import *
 from oa_proj_geo_2d import *
 
-
 def luxcore_setup(render_time=60):
     bpy.context.scene.render.engine = 'LUXCORE'
     bpy.context.scene.luxcore.halt.enable = True
@@ -33,8 +32,6 @@ def luxcore_setup(render_time=60):
 
 def cycles_setup():
     bpy.context.scene.render.engine = 'CYCLES'
-    
-
 
 class Axis:
     def __init__(self, parent, rotation=math.pi):
@@ -119,7 +116,6 @@ class ObjectTemplate:
             return np.array(T_OW)
         else:
             return T_OW
-
 
 
 class CyclesProjector(ObjectTemplate):
@@ -514,7 +510,6 @@ class StereoTemplate(ObjectTemplate):
             else:
                 return rot_RL
 
-        
         elif mode=="euler":
             return rot_RL.to_euler('XYZ')
         
@@ -533,17 +528,14 @@ class StereoTemplate(ObjectTemplate):
         transl_LR_L = rot_LB@transl_LR_B
         return transl_LR_L
 
-    def get_translation_right_to_left_optical(self, return_numpy=False):
+    def get_translation_right_to_left_optical(self):
         transl_BR_B = self.__right_optical.get_location()
         transl_BL_B = self.__left_optical.get_location()
         rot_BR = self.__right_optical.axis.get_rotation_parent().to_matrix()
         rot_RB = rot_BR.transposed()
         transl_RL_B = transl_BL_B - transl_BR_B
         transl_RL_R = rot_RB@transl_RL_B
-        if return_numpy:
-            return np.array(transl_RL_R)
-        else:
-            return transl_RL_R
+        return transl_RL_B
 
     def get_transf_left_to_right(self, return_numpy=False):
         transl = self.get_translation_left_to_right_optical()
@@ -553,6 +545,31 @@ class StereoTemplate(ObjectTemplate):
             return np.array(transf)
         else:
             return transf
+
+    def get_transf_right_to_left(self, return_numpy=False):
+        transl = self.get_translation_right_to_left_optical()
+        rot = self.get_rotation_right_to_left_optical()
+        transf = mathutils.Matrix.Translation(transl) @ rot.to_4x4()
+        if return_numpy:
+            return np.array(transf)
+        else:
+            return transf
+
+    def write_matrices(self, dir):
+        os.makedirs(dir, exist_ok=True)
+        E_RL = self.get_essential_matrix()
+        np.save(os.path.join(dir, "E_RL.npy"), E_RL)
+        F_RL = self.get_fundamental_matrix()
+        np.save(os.path.join(dir, "F_RL.npy"), F_RL)
+        T_LR = self.get_transf_left_to_right(return_numpy=True)
+        np.save(os.path.join(dir, "T_LR.npy"), T_LR)
+        T_RL = self.get_transf_right_to_left(return_numpy=True)
+        np.save(os.path.join(dir, "T_RL.npy"), T_RL)
+        K_L = self.__left_optical.get_camera_matrix()
+        np.save(os.path.join(dir, "K_L.npy"), K_L)
+        K_R = self.__right_optical.get_camera_matrix()
+        np.save(os.path.join(dir, "K_R.npy"), K_R)
+
 
     def get_rectified_image_pair(self, crop_parameter, left_img=None, right_img=None):
         if left_img is None:
@@ -693,7 +710,8 @@ class LuxcoreLaserScanner(StereoTemplate):
         print("")
         cam_left_img_filtered = self.camera.get_image(grayscale=True, exposure=exposure)
         cam_left_img_filtered[cam_left_img_filtered<threshold_low] = 0
-
+        mask = cam_left_img_filtered>0
+        subpix = oals.secdeg_momentum_subpix(cam_left_img_filtered)
 
         bpy.context.scene.luxcore.config.path.depth_total = orig_depth_total
         bpy.context.scene.luxcore.config.path.depth_diffuse = orig_depth_diffuse
@@ -704,14 +722,8 @@ class LuxcoreLaserScanner(StereoTemplate):
         bpy.context.scene.luxcore.halt.time = orig_halt_time
         bpy.context.scene.world.luxcore.sun_sky_gain = orig_sky_gain
 
+        return cam_left_img_filtered, mask, subpix
 
-
-        
-
-        return cam_left_img_filtered
-
-
-            
 
 class LuxcoreStructuredLightScanner(StereoTemplate):
     def __init__(self, name, location=(0,0,0), orientation=(0,0,0), intra_axial_dist=0.2, angle=math.pi/20, lumens=1000, cam_res=(1920,1080), proj_res=(1920, 1080), cam_left=True):
@@ -737,8 +749,6 @@ class LuxcoreStructuredLightScanner(StereoTemplate):
         self.projector.set_projector_image(rainbow_pattern)
         
         
-        
-    
 class TricopicTemplate(ObjectTemplate):
     def __init__(self, name, left_optical, middle_optical, right_optical, location=(0,0,0), orientation=(0,0,0), intra_axial_dists=[0.2,0.2], angles = [math.pi/20, math.pi/20], z_dist=0.0, z_angle=0.0):
         self.name = name
@@ -766,42 +776,36 @@ class TricopicTemplate(ObjectTemplate):
         self.cube.location = location
         self.cube.rotation_euler = orientation
         
-"""
-    def get_essential_matrix(self, right_to_left=True):
-        transl_RL_R = self.get_translation_right_to_left_optical()
-        rot_RL = self.get_rotation_right_to_left_optical()
-        rot_RL = np.array(rot_RL)
-        essential_matrix = oarb.vec_to_so3(transl_RL_R)@rot_RL
+    def get_essential_matrix(self, from_to="r->l"):
+        print("from_to ess", from_to)
+        transl = self.get_translation(from_to=from_to, return_numpy=True)
+        print("transl ess", transl)
+        rot = self.get_rotation(from_to=from_to, return_numpy=True)
+        print("rot ess", rot)
+        essential_matrix = oarb.vec_to_so3(transl)@rot
         return essential_matrix
-"""
 
-    def get_essential_matrix(self, from_to="l->r"):
+    def get_fundamental_matrix(self, from_to="r->l"):
+        print("from_to fund", from_to)
         from_to.replace(" ", "")
-        if from_to == "l->r":
-            raise NotImplementedError
+        from_opt_letter = from_to[0]
+        to_opt_letter = from_to[-1]
+        assert(from_opt_letter != to_opt_letter)
+        assert(from_opt_letter in self.__opticals)
+        assert(to_opt_letter in self.__opticals)
+        from_opt = self.__opticals[from_opt_letter]
+        to_opt = self.__opticals[to_opt_letter]
 
-        elif from_to == "l->m":
-            raise NotImplementedError
+        K1 = from_opt.get_camera_matrix()
+        print("to cam mat fund", K1)
+        K2 = to_opt.get_camera_matrix()
+        print("from cam mat fund", K2)
+        E = self.get_essential_matrix(from_to=from_to)
+        print("E fund", E)
+        F = np.linalg.inv(K2).T @ E @ np.linalg.inv(K1)
+        return F
 
-        elif from_to == "r->l":
-            raise NotImplementedError
 
-        elif from_to == "r->m":
-            raise NotImplementedError
-        
-        elif from_to == "m->l":
-            raise NotImplementedError
-
-        elif from_to == "m->r":
-            raise NotImplementedError
-        else:
-            assert("from_to argument is invalid")
-        transl_RL_R = self.get_translation_right_to_left_optical()
-        rot_RL = self.get_rotation_right_to_left_optical()
-        rot_RL = np.array(rot_RL)
-        essential_matrix = rot_RL@oarb.vec_to_so3(transl_RL_R)
-        return essential_matrix
-    
     def get_rotation(self, from_to="l->r", mode="matrix", return_numpy=False):
         from_to.replace(" ", "")
         from_opt_letter = from_to[0]
@@ -871,8 +875,6 @@ class TricopicTemplate(ObjectTemplate):
         else:
             return transf
 
-
-
     def get_rectified_image_pair(self, between="l,r", crop_parameter=0.5):
         left_img = self.__left_optical.get_image()
         right_img = self.__right_optical.get_image()
@@ -899,6 +901,44 @@ class LuxcoreStereoLaserScanner(TricopicTemplate):
         self.camera_right = Camera(name + "_camera", resolution=resolutions[2], sensor_width=sensor_widths[2])
         self.laser = LuxcoreLaser(name + "_laser", resolution=resolutions[1], sensor_width=sensor_widths[1], lumens=lumens)
         super().__init__(name, self.camera_left, self.laser, self.camera_right, location, orientation, intra_axial_dists, angles, z_dist, z_angle)
+
+    def write_matrices(self, dir):
+        os.makedirs(dir, exist_ok=True)
+        H_RL = self.get_planar_homography()
+        np.save(os.path.join(dir, "H_RL.npy"), H_RL)
+        T_RL = self.get_transformation(from_to="r->l", return_numpy=True)
+        np.save(os.path.join(dir, "T_RL.npy"), T_RL)
+        T_LR = self.get_transformation(from_to="l->r", return_numpy=True)
+        np.save(os.path.join(dir, "T_LR.npy"), T_LR)
+        T_LM = self.get_transformation(from_to="l->m", return_numpy=True)
+        np.save(os.path.join(dir, "T_LM.npy"), T_LM)
+        T_RM = self.get_transformation(from_to="r->m", return_numpy=True)
+        np.save(os.path.join(dir, "T_RM.npy"), T_RM)
+        T_ML = self.get_transformation(from_to="m->l", return_numpy=True)
+        np.save(os.path.join(dir, "T_ML.npy"), T_ML)
+        T_MR = self.get_transformation(from_to="m->r", return_numpy=True)
+        np.save(os.path.join(dir, "T_MR.npy"), T_MR)
+        E_RL = self.get_essential_matrix(from_to="r->l")
+        np.save(os.path.join(dir, "E_ML.npy"), E_RL)
+        E_ML = self.get_essential_matrix(from_to="m->l")
+        np.save(os.path.join(dir, "E_ML.npy"), E_ML)
+        E_RM = self.get_essential_matrix(from_to="r->m")
+        np.save(os.path.join(dir, "E_ML.npy"), E_RM)
+        F_RL = self.get_fundamental_matrix(from_to="r->l")
+        np.save(os.path.join(dir, "F_ML.npy"), F_RL)
+        F_ML = self.get_fundamental_matrix(from_to="m->l")
+        np.save(os.path.join(dir, "F_ML.npy"), F_ML)
+        F_RM = self.get_fundamental_matrix(from_to="r->m")
+        np.save(os.path.join(dir, "F_ML.npy"), F_RM)
+        K_L = self.camera_left.get_camera_matrix()
+        np.save(os.path.join(dir, "K_L.npy"), K_L)
+        K_M = self.laser.get_camera_matrix()
+        np.save(os.path.join(dir, "K_M.npy"), K_M)
+        K_R = self.camera_right.get_camera_matrix()
+        np.save(os.path.join(dir, "K_R.npy"), K_R)
+
+
+        
 
     def get_planar_homography(self, right_to_left=True):
         if right_to_left:
@@ -939,25 +979,6 @@ class LuxcoreStereoLaserScanner(TricopicTemplate):
         print("f end: get_projected_view")
         return projected_img
 
-    def get_laser_correspondance_img(self, step=1):
-        laser_img = self.laser.get_image()
-        F = self.get_fundamental_matrix()
-        cam_res = self.camera.resolution
-        laser_corr_img = np.zeros((cam_res[1], cam_res[0], 3), dtype=np.uint8)
-
-        F = self.get_fundamental_matrix()
-        mid_col_laser = int(laser_img.shape[1]/2)
-
-        for row in range(0, laser_img.shape[0]-step, step):
-            centre_point_homg2d = np.array([mid_col_laser, row, 1])
-            px_point = homg2d_to_px(centre_point_homg2d, laser_img.shape)
-            color = laser_img[int(px_point[1]), mid_col_laser, :]
-            color = (int(color[0]), int(color[1]), int(color[2]))
-            l1 = F.T@centre_point_homg2d
-            laser_corr_img = draw_line2d(laser_corr_img, l1, color=color)
-        return laser_corr_img
-
-           
     def overlap_views(self, filter_function, left_view=True, cam_left_img=None, cam_right_img=None):
         print("f: overlap_views")
         if left_view:
@@ -975,7 +996,7 @@ class LuxcoreStereoLaserScanner(TricopicTemplate):
         print("f end: overlap_views")
         return projected, other_view
 
-    def get_ground_truth_scan(self, render_time=8, exposure=0, left_view=True):
+    def get_ground_truth_scan(self, render_time=8, exposure=0, threshold_low=10, left_view=True):
         orig_depth_total = bpy.context.scene.luxcore.config.path.depth_total 
         orig_depth_diffuse = bpy.context.scene.luxcore.config.path.depth_total
         orig_depth_glossy = bpy.context.scene.luxcore.config.path.depth_glossy
@@ -996,7 +1017,11 @@ class LuxcoreStereoLaserScanner(TricopicTemplate):
         #cam_left_img_rgb = self.camera_left.get_image(grayscale=False)
         #print("")
         bpy.context.scene.world.luxcore.gain = 0
+
         cam_left_img_filtered = self.camera_left.get_image(grayscale=True)
+        cam_left_img_filtered[cam_left_img_filtered<threshold_low] = 0
+        mask = cam_left_img_filtered>0
+        subpix = oals.secdeg_momentum_subpix(cam_left_img_filtered)
 
         bpy.context.scene.luxcore.config.path.depth_total = orig_depth_total
         bpy.context.scene.luxcore.config.path.depth_diffuse = orig_depth_diffuse
@@ -1007,7 +1032,32 @@ class LuxcoreStereoLaserScanner(TricopicTemplate):
         bpy.context.scene.luxcore.halt.time = orig_halt_time
 
 
-        return cam_left_img_filtered
+        return cam_left_img_filtered, mask, subpix
+
+    def get_laser_correspondance_img(self, step=1):
+        laser_img = self.laser.get_image()
+        F = self.get_fundamental_matrix(from_to="m->l")
+        cam_res = self.camera_left.resolution
+        laser_corr_img = np.zeros((cam_res[1], cam_res[0], 3), dtype=np.uint8)
+
+        mid_col_laser = int(laser_img.shape[1]/2)
+
+        for row in range(0, laser_img.shape[0]-step, step):
+            centre_point_homg2d = np.array([mid_col_laser, row, 1])
+            px_point = homg2d_to_px(centre_point_homg2d, laser_img.shape)
+            color = laser_img[int(px_point[1]), mid_col_laser, :]
+            color = (int(color[0]), int(color[1]), int(color[2]))
+            l1 = F.T@centre_point_homg2d
+            laser_corr_img = draw_line2d(laser_corr_img, l1, color=color)
+        return laser_corr_img
+
+    def show_laser_epipolar_lines(self, cam_img=None, step=10):
+        if cam_img is None:
+            cam_img = self.camera_left.get_image()
+        laser_img = self.laser.get_image()
+        epiline_img = self.get_laser_correspondance_img(step=step)
+        cam_img_lines = np.where(epiline_img>0, epiline_img, cam_img)
+        return cam_img_lines
         
 
 

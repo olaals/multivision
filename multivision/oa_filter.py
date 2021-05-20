@@ -12,6 +12,19 @@ def nothing(x):
 def d3stack(mask):
     return np.dstack((mask,mask,mask))
 
+def filter_rowwise_largest_blob(img):
+    n, labels, stats, _ = cv2.connectedComponentsWithStats(img)
+    areas = stats[:,4]
+    argsort_areas = np.argsort(np.argsort(areas))
+    ind_img = np.zeros_like(labels)
+    for i in range(len(areas)-1):
+        ind  = argsort_areas[i+1]
+        ind_img[labels==i+1] = ind
+    row_max = np.max(ind_img, axis=1)
+    mask = np.where(ind_img == row_max[:,None], row_max[:,None], 0)
+    mask = mask>0
+    return mask
+
 def filter_value(img, value):
     img_hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
     mask = img_hsv[:,:,2]>value
@@ -326,6 +339,6 @@ def test_get_avg_line_width():
 
 
 if __name__ == '__main__':
-    #test_avg_channels()
-    test_get_avg_line_width()
+    pass
+
 
