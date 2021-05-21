@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 from oa_pointcloud_utils import *
 from oa_proj_geo_2d import *
 
-def luxcore_setup(render_time=60):
+def luxcore_setup(render_time=10):
     bpy.context.scene.render.engine = 'LUXCORE'
     bpy.context.scene.luxcore.halt.enable = True
     bpy.context.scene.luxcore.halt.use_time = True
